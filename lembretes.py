@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
-
 import os
 import sqlite3
 import requests
 from datetime import datetime, timedelta
 import json
 
-# --- CONFIGURAÇÕES (DEVEM SER AS MESMAS DO MAIN.PY) ---
+# --- CONFIGURAÇÕES ---
 ZAPI_INSTANCE_ID = os.environ.get('ZAPI_INSTANCE_ID')
 ZAPI_TOKEN = os.environ.get('ZAPI_TOKEN')
-ZAPI_CLIENT_TOKEN = os.environ.get('ZAPI_CLIENT_TOKEN') # Opcional, dependendo da sua Z-API
-DATABASE_FILE = 'bot_database.db'
+ZAPI_CLIENT_TOKEN = os.environ.get('ZAPI_CLIENT_TOKEN')
+DATA_DIR = os.environ.get('RENDER_DISK_PATH', '.')
+DATABASE_FILE = os.path.join(DATA_DIR, 'bot_database.db')
 BOT_NAME = "Cadu"
 
 def send_reminder(phone, user_name):
-    """Envia a mensagem de lembrete via Z-API."""
     print(f"Preparando lembrete para {user_name} ({phone})...")
     url = f"https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}/send-text"
     message = (
@@ -23,7 +22,7 @@ def send_reminder(phone, user_name):
         "É só me responder aqui quando estiver pronto. 😉"
     )
     payload = {"phone": phone, "message": message}
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN}
     
     try:
         response = requests.post(url, json=payload, headers=headers)
@@ -38,11 +37,10 @@ def send_reminder(phone, user_name):
         return False
 
 def mark_reminder_as_sent(phone):
-    """Marca no banco de dados que o lembrete foi enviado para não enviar novamente."""
     try:
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
-        cursor.execute("UPDATE users SET reminder_sent = 1 WHERE phone = ?", (phone,))
+        cursor.execute("UPDATE users SET reminder_sent = 1, updated_at = ? WHERE phone = ?", (datetime.now(), phone))
         conn.commit()
         conn.close()
         print(f"Usuário {phone} marcado como 'lembrete enviado'.")
@@ -50,15 +48,16 @@ def mark_reminder_as_sent(phone):
         print(f"Erro ao atualizar status do lembrete para {phone}: {e}")
 
 def check_for_inactive_users():
-    """Verifica o banco de dados por usuários inativos e envia lembretes."""
     print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Iniciando verificação de usuários inativos...")
-    
+    if not os.path.exists(DATABASE_FILE):
+        print("Banco de dados não encontrado. Saindo.")
+        return
+        
     try:
         conn = sqlite3.connect(DATABASE_FILE)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Usuários que não interagiram nas últimas 24 horas, não completaram o processo E não receberam lembrete
         time_threshold = datetime.now() - timedelta(hours=24)
         
         cursor.execute(
@@ -69,7 +68,7 @@ def check_for_inactive_users():
         inactive_users = cursor.fetchall()
         conn.close()
     except sqlite3.OperationalError as e:
-        print(f"ERRO: Não foi possível ler o banco de dados: {e}. Certifique-se de que o arquivo main.py já rodou pelo menos uma vez para criar o banco de dados com a estrutura correta.")
+        print(f"ERRO: Não foi possível ler o banco de dados: {e}.")
         return
 
     if not inactive_users:
@@ -80,12 +79,9 @@ def check_for_inactive_users():
     for user in inactive_users:
         try:
             resume_data = json.loads(user['resume_data'])
-            # Pega o primeiro nome para a saudação
-            user_name = resume_data.get('nome', 'tudo bem?').split(' ')[0]
-            
+            user_name = resume_data.get('nome_completo', 'tudo bem?').split(' ')[0]
             if send_reminder(user['phone'], user_name):
                 mark_reminder_as_sent(user['phone'])
-
         except Exception as e:
             print(f"Erro ao processar usuário {user['phone']}: {e}")
     
@@ -93,6 +89,6 @@ def check_for_inactive_users():
 
 if __name__ == "__main__":
     if not all([ZAPI_INSTANCE_ID, ZAPI_TOKEN]):
-        print("ERRO: As variáveis de ambiente da Z-API (ZAPI_INSTANCE_ID, ZAPI_TOKEN) não foram encontradas nos seus 'Secrets'.")
+        print("ERRO: As variáveis de ambiente da Z-API não foram encontradas.")
     else:
         check_for_inactive_users()
