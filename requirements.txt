@@ -2,7 +2,7 @@ Flask
 requests
 fpdf2
 pypix
-beautifulsoup4
 google-generativeai
 openai
 gunicorn
+beautifulsoup4
