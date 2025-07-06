@@ -3,6 +3,5 @@ requests
 fpdf2
 pypix
 google-generativeai
-openai
-gunicorn
-beautifulsoup4
+python-dotenv
+APScheduler
