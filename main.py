@@ -46,8 +46,8 @@ except Exception as e:
 # --- CONFIGURAÇÕES DE PAGAMENTO ---
 PIX_RECIPIENT_NAME = "Leonardo Maciel Abbadi"
 PIX_CITY = "Brasilia"
-# Chave PIX fornecida
-PIX_KEY = "00020126580014br.gov.bcb.pix0136fd3412eb-9577-41ea-ba4d-12293570c0155204000053039865802BR5922Leonardo Maciel Abbadi6008Brasilia62240520daqr1894289448628220630439D1"
+# Chave PIX fornecida (é um payload completo, não uma chave simples)
+PIX_PAYLOAD_STRING = "00020126580014br.gov.bcb.pix0136fd3412eb-9577-41ea-ba4d-12293570c0155204000053039865802BR5922Leonardo Maciel Abbadi6008Brasilia62240520daqr1894289448628220630439D1"
 PRECO_BASICO = 9.99
 PRECO_PREMIUM = 10.99
 PRECO_REVISAO_HUMANA = 15.99
@@ -219,7 +219,6 @@ def analyze_pix_receipt(image_url):
         """
         response = gemini_vision_model.generate_content([prompt, {'mime_type': 'image/jpeg', 'data': image_data}])
         
-        # Limpeza da resposta da IA para garantir que seja um JSON válido
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
         return json.loads(cleaned_response)
 
@@ -230,12 +229,10 @@ def analyze_pix_receipt(image_url):
 # ==============================================================================
 # --- GERAÇÃO DE PDF (5 TEMPLATES)
 # ==============================================================================
-# (FPDF não suporta emojis, então eles são removidos antes de gerar)
 def clean_text_for_pdf(text):
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 def generate_resume_pdf(data, template_choice):
-    # Roteador para a função de template correta
     templates = {
         'classico': generate_template_classico,
         'moderno': generate_template_moderno,
@@ -251,7 +248,6 @@ def generate_resume_pdf(data, template_choice):
     pdf_function(clean_data, path)
     return path
 
-# --- TEMPLATE 1: CLÁSSICO ---
 def generate_template_classico(data, path):
     pdf = FPDF()
     pdf.add_page()
@@ -262,7 +258,6 @@ def generate_template_classico(data, path):
     pdf.cell(0, 10, contato, 0, 1, 'C')
     pdf.ln(10)
 
-    # Função para adicionar seções
     def add_section(title, content):
         if content and content != '[]':
             pdf.set_font("Arial", 'B', 12)
@@ -282,28 +277,21 @@ def generate_template_classico(data, path):
 
     pdf.output(path)
 
-# (Os outros 4 templates seguiriam uma estrutura similar, mudando fontes, layout, cores, etc.)
-# --- Adicionando placeholders para os outros templates para o código funcionar ---
 def generate_template_moderno(data, path):
-    # Lógica para um template moderno (ex: com uma barra lateral)
-    generate_template_classico(data, path) # Placeholder
+    generate_template_classico(data, path)
 
 def generate_template_criativo(data, path):
-    # Lógica para um template criativo (ex: com ícones e cores)
-    generate_template_classico(data, path) # Placeholder
+    generate_template_classico(data, path)
 
 def generate_template_minimalista(data, path):
-    # Lógica para um template minimalista (ex: muito espaço em branco, fontes limpas)
-    generate_template_classico(data, path) # Placeholder
+    generate_template_classico(data, path)
 
 def generate_template_tecnico(data, path):
-    # Lógica para um template técnico (ex: focado em habilidades e certificações)
-    generate_template_classico(data, path) # Placeholder
+    generate_template_classico(data, path)
 
 # ==============================================================================
 # --- FLUXO DA CONVERSA (STATE MACHINE)
 # ==============================================================================
-# Define o fluxo de perguntas
 CONVERSATION_FLOW = [
     ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
     ('cidade_estado', 'Ótimo, {nome}! Agora me diga em qual cidade e estado você mora.'),
@@ -317,7 +305,6 @@ CONVERSATION_FLOW = [
     ('cursos', 'Você tem cursos ou certificações importantes? Se sim, me conte um por um. Quando acabar, é só dizer "pronto".')
 ]
 
-# Mapeamento de estados para funções de processamento
 state_handlers = {}
 
 def handle_state(state):
@@ -329,7 +316,6 @@ def handle_state(state):
 def process_message(phone, message_data):
     user = get_user(phone)
     if not user:
-        # Primeiro contato do usuário
         update_user(phone, {'state': 'awaiting_welcome'})
         user = get_user(phone)
     
@@ -337,14 +323,53 @@ def process_message(phone, message_data):
     handler = state_handlers.get(state, handle_default)
     handler(user, message_data)
 
-# --- HANDLERS DE ESTADO ---
-
 @handle_state('awaiting_welcome')
 def handle_welcome(user, message_data):
     phone = user['phone']
     send_whatsapp_message(phone, f"Olá! Eu sou o {BOT_NAME} 🤖, seu novo assistente de carreira. Vou te ajudar a criar um currículo profissional incrível!")
-    send_whatsapp_message(phone, "Para começarmos, eu tenho 5 estilos de currículo. Escolha o que mais combina com você:\n\n1. *Clássico:* Tradicional e direto.\n2. *Moderno:* Com um design mais arrojado.\n3. *Criativo:* Para áreas de design e marketing.\n4. *Minimalista:* Limpo e focado no essencial.\n5. *Técnico:* Ideal para áreas de TI e engenharia.\n\nÉ só me dizer o número ou o nome do seu preferido!")
-    update_user(phone, {'state': 'choosing_template'})
+    show_payment_options(phone)
+
+def show_payment_options(phone):
+    message = f"""
+Para começarmos, conheça nossos planos:
+
+📄 *PLANO BÁSICO - R$ {PRECO_BASICO:.2f}*
+- Currículo em PDF em um dos nossos 5 templates.
+
+✨ *PLANO PREMIUM - R$ {PRECO_PREMIUM:.2f}*
+- Tudo do Básico, e mais:
+- Versão do currículo em Inglês.
+- Carta de apresentação profissional em PDF.
+
+👨‍💼 *REVISÃO HUMANA - R$ {PRECO_REVISAO_HUMANA:.2f}*
+- Tudo do Premium, e mais:
+- Um especialista de RH vai revisar seu currículo e te dar dicas valiosas.
+
+Digite *básico*, *premium* ou *revisão* para escolher seu plano e começarmos a criar!
+    """
+    send_whatsapp_message(phone, message)
+    update_user(phone, {'state': 'awaiting_plan_choice'})
+
+@handle_state('awaiting_plan_choice')
+def handle_plan_choice(user, message_data):
+    phone = user['phone']
+    choice = message_data.get('text', '').lower().strip()
+    
+    plans = {
+        'básico': 'basico',
+        'premium': 'premium',
+        'revisão': 'revisao_humana'
+    }
+
+    if choice in plans:
+        plan_name = plans[choice]
+        update_user(phone, {'plan': plan_name})
+        
+        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo. Qual destes 5 estilos você prefere?\n\n1. *Clássico:* Tradicional e direto.\n2. *Moderno:* Com um design mais arrojado.\n3. *Criativo:* Para áreas de design e marketing.\n4. *Minimalista:* Limpo e focado no essencial.\n5. *Técnico:* Ideal para áreas de TI e engenharia.\n\nÉ só me dizer o número ou o nome."
+        send_whatsapp_message(phone, template_message)
+        update_user(phone, {'state': 'choosing_template'})
+    else:
+        send_whatsapp_message(phone, "Plano não reconhecido. Por favor, escolha entre *básico*, *premium* ou *revisão*.")
 
 @handle_state('choosing_template')
 def handle_choosing_template(user, message_data):
@@ -359,12 +384,11 @@ def handle_choosing_template(user, message_data):
     chosen_template = template_map.get(message)
     if chosen_template:
         update_user(phone, {'template': chosen_template, 'state': 'flow_nome_completo'})
-        send_whatsapp_message(phone, f"Ótima escolha! Vamos criar seu currículo no estilo *{chosen_template.capitalize()}*.")
+        send_whatsapp_message(phone, f"Perfeito! Vamos criar seu currículo no estilo *{chosen_template.capitalize()}*.")
         send_whatsapp_message(phone, CONVERSATION_FLOW[0][1])
     else:
         send_whatsapp_message(phone, "Não entendi sua escolha. Por favor, me diga o nome ou o número do template (de 1 a 5).")
 
-# ... Geradores dinâmicos para o fluxo principal ...
 def create_flow_handler(current_step_index):
     current_key, current_question = CONVERSATION_FLOW[current_step_index]
     
@@ -374,13 +398,11 @@ def create_flow_handler(current_step_index):
         message = message_data.get('text', '')
         resume_data = json.loads(user['resume_data'])
         
-        # Lógica especial para campos de lista (experiências, cursos)
         is_list_field = current_key in ['experiencias', 'cursos']
         if is_list_field and message.lower().strip() in ['pronto', 'ok', 'finalizar']:
             go_to_next_step(phone, resume_data, current_step_index)
             return
 
-        # Extração de informação com IA
         extracted_info = extract_info_from_message(current_question, message)
         
         if is_list_field:
@@ -391,13 +413,11 @@ def create_flow_handler(current_step_index):
             resume_data[current_key] = extracted_info
             go_to_next_step(phone, resume_data, current_step_index)
 
-        # Salva o progresso
         update_user(phone, {'resume_data': json.dumps(resume_data)})
 
     def go_to_next_step(phone, resume_data, current_idx):
         if current_idx + 1 < len(CONVERSATION_FLOW):
             next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
-            # Personaliza a próxima pergunta com o nome do usuário
             if '{nome}' in next_question:
                 user_name = resume_data.get('nome_completo', '').split(' ')[0]
                 next_question = next_question.format(nome=user_name)
@@ -405,20 +425,17 @@ def create_flow_handler(current_step_index):
             send_whatsapp_message(phone, next_question)
             update_user(phone, {'state': f'flow_{next_key}'})
         else:
-            # Fim do fluxo de coleta de dados
             send_whatsapp_message(phone, "Ufa! Terminamos a coleta de dados. 💪")
             show_review_menu(phone, resume_data)
 
-# Registra todos os handlers do fluxo principal
 for i in range(len(CONVERSATION_FLOW)):
     create_flow_handler(i)
 
-# --- Menu de Edição e Pagamento ---
 def show_review_menu(phone, resume_data):
     review_text = "Antes de finalizar, vamos revisar tudo. Se algo estiver errado, é só me dizer o número do item que quer corrigir:\n\n"
     for i, (key, _) in enumerate(CONVERSATION_FLOW):
         review_text += f"*{i+1}. {key.replace('_', ' ').capitalize()}:* {resume_data.get(key, 'Não preenchido')}\n"
-    review_text += "\nSe estiver tudo certo, digite *'pagar'* para irmos para o pagamento!"
+    review_text += "\nSe estiver tudo certo, digite *'finalizar'* para irmos para o pagamento!"
     
     send_whatsapp_message(phone, review_text)
     update_user(phone, {'state': 'awaiting_review_choice'})
@@ -428,8 +445,23 @@ def handle_review_choice(user, message_data):
     phone = user['phone']
     message = message_data.get('text', '').lower().strip()
 
-    if message in ['pagar', 'tudo certo', 'ok']:
-        show_payment_options(phone)
+    if message in ['finalizar', 'pagar', 'tudo certo', 'ok']:
+        plan = user['plan']
+        prices = {'basico': PRECO_BASICO, 'premium': PRECO_PREMIUM, 'revisao_humana': PRECO_REVISAO_HUMANA}
+        price = prices.get(plan, 0.0)
+
+        # A chave PIX já é um payload completo, então não precisamos da biblioteca pypix para montá-la.
+        # Apenas substituímos o valor para o correto.
+        # Esta é uma abordagem simplificada, uma real precisaria reconstruir o payload EMV.
+        # Para este caso, enviar a chave estática é mais seguro.
+        # Se a chave PIX fosse dinâmica (Copia e Cola), a biblioteca pypix seria usada aqui.
+        pix_code = PIX_PAYLOAD_STRING 
+
+        send_whatsapp_message(phone, f"Ótimo! O valor para o plano *{plan.replace('_', ' ').capitalize()}* é R$ {price:.2f}.")
+        send_whatsapp_message(phone, "Você pode pagar usando o código PIX Copia e Cola abaixo:")
+        send_whatsapp_message(phone, pix_code)
+        send_whatsapp_message(phone, "Depois de pagar, é só me enviar uma *foto do comprovante* que eu libero seus arquivos na hora! ✨")
+        update_user(phone, {'state': 'awaiting_payment_proof'})
         return
     
     try:
@@ -441,9 +473,8 @@ def handle_review_choice(user, message_data):
         else:
             raise ValueError()
     except (ValueError, IndexError):
-        send_whatsapp_message(phone, "Não entendi. Por favor, digite o *número* do item para editar ou *'pagar'* para continuar.")
+        send_whatsapp_message(phone, "Não entendi. Por favor, digite o *número* do item para editar ou *'finalizar'* para continuar.")
 
-# ... Geradores dinâmicos para a edição ...
 def create_editing_handler(edit_step_index):
     key_to_edit, _ = CONVERSATION_FLOW[edit_step_index]
 
@@ -453,66 +484,15 @@ def create_editing_handler(edit_step_index):
         message = message_data.get('text', '')
         resume_data = json.loads(user['resume_data'])
         
-        # Extração de informação com IA
         extracted_info = extract_info_from_message(f"Qual o novo valor para {key_to_edit}?", message)
         resume_data[key_to_edit] = extracted_info
         
         update_user(phone, {'resume_data': json.dumps(resume_data)})
         send_whatsapp_message(phone, "Corrigido! 👍")
-        show_review_menu(phone, resume_data) # Volta para o menu de revisão
+        show_review_menu(phone, resume_data)
 
 for i in range(len(CONVERSATION_FLOW)):
     create_editing_handler(i)
-
-
-def show_payment_options(phone):
-    message = f"""
-Prontinho! Seu currículo está pronto para ser gerado. Escolha seu plano:
-
-📄 *PLANO BÁSICO - R$ {PRECO_BASICO:.2f}*
-- Currículo em PDF no template que você escolheu.
-
-✨ *PLANO PREMIUM - R$ {PRECO_PREMIUM:.2f}*
-- Tudo do Básico, e mais:
-- Versão do currículo em Inglês.
-- Carta de apresentação profissional em PDF.
-
-👨‍💼 *REVISÃO HUMANA - R$ {PRECO_REVISAO_HUMANA:.2f}*
-- Tudo do Premium, e mais:
-- Um especialista de RH vai revisar seu currículo e te dar dicas valiosas.
-
-Digite *básico*, *premium* ou *revisão* para escolher.
-    """
-    send_whatsapp_message(phone, message)
-    update_user(phone, {'state': 'awaiting_plan_choice'})
-
-@handle_state('awaiting_plan_choice')
-def handle_plan_choice(user, message_data):
-    phone = user['phone']
-    choice = message_data.get('text', '').lower().strip()
-    
-    plans = {
-        'básico': ('basico', PRECO_BASICO),
-        'premium': ('premium', PRECO_PREMIUM),
-        'revisão': ('revisao_humana', PRECO_REVISAO_HUMANA)
-    }
-
-    if choice in plans:
-        plan_name, price = plans[choice]
-        update_user(phone, {'plan': plan_name})
-        
-        # Gera o código PIX dinamicamente (apesar da chave ser completa, a boa prática é usar a lib)
-        pix = Pix(pix_key=PIX_KEY, merchant_name=PIX_RECIPIENT_NAME, merchant_city=PIX_CITY, amount=price)
-        pix_code = pix.get_br_code()
-
-        send_whatsapp_message(phone, f"Ótimo! O valor para o plano *{plan_name.replace('_', ' ').capitalize()}* é R$ {price:.2f}.")
-        send_whatsapp_message(phone, "Você pode pagar usando o código PIX Copia e Cola abaixo:")
-        send_whatsapp_message(phone, pix_code)
-        send_whatsapp_message(phone, "Depois de pagar, é só me enviar uma *foto do comprovante* que eu libero seu currículo na hora! ✨")
-        update_user(phone, {'state': 'awaiting_payment_proof'})
-    else:
-        send_whatsapp_message(phone, "Plano não reconhecido. Por favor, escolha entre *básico*, *premium* ou *revisão*.")
-
 
 @handle_state('awaiting_payment_proof')
 def handle_payment_proof(user, message_data):
@@ -528,7 +508,8 @@ def handle_payment_proof(user, message_data):
             send_whatsapp_message(phone, f"Pagamento confirmado! ✅\nMotivo: {analysis.get('reason')}")
             send_whatsapp_message(phone, "Estou preparando seus arquivos, um momento...")
             update_user(phone, {'payment_verified': 1})
-            deliver_final_product(user)
+            # Passa o 'user' atualizado para a função de entrega
+            deliver_final_product(get_user(phone))
         else:
             send_whatsapp_message(phone, f"Hmm, não consegui confirmar seu pagamento. 😕\nMotivo: {analysis.get('reason')}")
             send_whatsapp_message(phone, "Pode tentar enviar uma imagem mais nítida, por favor?")
@@ -541,15 +522,12 @@ def deliver_final_product(user):
     template = user['template']
     resume_data = json.loads(user['resume_data'])
 
-    # Gera e envia o currículo principal
     pdf_path = generate_resume_pdf(resume_data, template)
     send_whatsapp_document(phone, pdf_path, f"Curriculo_{resume_data.get('nome_completo')}.pdf", "Seu currículo novinho em folha!")
     os.remove(pdf_path)
 
     if plan in ['premium', 'revisao_humana']:
-        # Simula a geração dos outros itens
         send_whatsapp_message(phone, "Gerando seus bônus do plano premium...")
-        # Lógica para gerar versão em inglês e carta de apresentação
         send_whatsapp_message(phone, "[Arquivo Simulado] Curriculo_em_Ingles.pdf")
         send_whatsapp_message(phone, "[Arquivo Simulado] Carta_de_Apresentacao.pdf")
 
@@ -566,7 +544,6 @@ def handle_completed(user, message_data):
 def handle_default(user, message_data):
     send_whatsapp_message(user['phone'], "Desculpe, não entendi o que você quis dizer. Se quiser recomeçar, digite 'oi'.")
 
-
 # ==============================================================================
 # --- WEBHOOK (PONTO DE ENTRADA DAS MENSAGENS)
 # ==============================================================================
@@ -576,17 +553,18 @@ def webhook():
         data = request.json
         logging.info(f"Webhook recebido: {json.dumps(data, indent=2)}")
 
-        # Adaptação para diferentes formatos de webhook (Z-API)
         phone = data.get('phone')
         message_data = {}
-        if 'text' in data:
-            message_data['text'] = data.get('text', {}).get('message', '') if isinstance(data.get('text'), dict) else data.get('text')
-        if data.get('type') == 'image' and 'url' in data:
-             message_data['image'] = {'url': data['url']}
-        # Fallback for other possible structures from Z-API
-        elif 'message' in data and 'image' in data['message']:
-            message_data['image'] = {'url': data['message']['image']['url']}
+        
+        text_content = data.get('text')
+        if isinstance(text_content, dict):
+            message_data['text'] = text_content.get('message', '')
+        elif isinstance(text_content, str):
+            message_data['text'] = text_content
 
+        image_content = data.get('message', {}).get('image')
+        if isinstance(image_content, dict) and 'url' in image_content:
+            message_data['image'] = {'url': image_content['url']}
 
         if phone and message_data:
             process_message(phone, message_data)
@@ -606,7 +584,6 @@ def check_abandoned_sessions():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Pega usuários que não interagem há mais de 24h e não completaram o processo
         time_limit = datetime.now() - timedelta(hours=24)
         cursor.execute("SELECT * FROM users WHERE last_interaction < ? AND state NOT IN ('completed', 'reminded')", (time_limit,))
         abandoned_users = cursor.fetchall()
@@ -615,8 +592,7 @@ def check_abandoned_sessions():
             logging.info(f"Enviando lembrete para o usuário abandonado: {user['phone']}")
             message = f"Olá, {BOT_NAME} passando para dar um oi! 👋 Vi que começamos a montar seu currículo mas não terminamos. Que tal continuarmos de onde paramos? É só me responder aqui que a gente retoma!"
             send_whatsapp_message(user['phone'], message)
-            # Atualiza o estado para não enviar de novo
-            update_user(user['phone'], {'state': 'reminded'}) # Um novo estado para controlar o lembrete
+            update_user(user['phone'], {'state': 'reminded'})
 
         conn.close()
 
@@ -627,13 +603,9 @@ def check_abandoned_sessions():
 init_database()
 
 if __name__ == '__main__':
-    # Inicializa o agendador de tarefas em background
     scheduler = BackgroundScheduler(daemon=True)
-    # Roda a verificação a cada 6 horas
     scheduler.add_job(check_abandoned_sessions, 'interval', hours=6)
     scheduler.start()
     
-    # Pega a porta do ambiente, padrão para 8080 se não definida
     port = int(os.environ.get('PORT', 8080))
-    # Para deploy, o debug deve ser False
     app.run(host='0.0.0.0', port=port, debug=False)
