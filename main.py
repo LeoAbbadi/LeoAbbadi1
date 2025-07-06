@@ -36,7 +36,8 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 try:
     genai.configure(api_key=GOOGLE_API_KEY)
     gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-    gemini_vision_model = genai.GenerativeModel('gemini-1.5-vision-pro')
+    # LINHA CORRIGIDA ABAIXO
+    gemini_vision_model = genai.GenerativeModel('gemini-pro-vision') 
     logging.info("API do Google Gemini configurada com sucesso.")
 except Exception as e:
     logging.error(f"Falha ao configurar a API do Google: {e}")
@@ -169,7 +170,7 @@ def analyze_pix_receipt(image_url):
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
         return json.loads(cleaned_response)
     except Exception as e:
-        logging.error(f"Erro ao analisar comprovante PIX: {e}")
+        logging.error(f"Erro ao analisar comprovante PIX: {e}", exc_info=True)
         return {'verified': False, 'reason': 'Não consegui ler a imagem do comprovante.'}
 
 # ==============================================================================
@@ -342,7 +343,7 @@ def handle_review_choice(user, message_data):
         plan = user['plan']
         prices = {'basico': PRECO_BASICO, 'premium': PRECO_PREMIUM, 'revisao_humana': PRECO_REVISAO_HUMANA}
         price = prices.get(plan, 0.0)
-        pix_code = PIX_PAYLOAD_STRING
+        pix_code = PIX_PAYLOAD_STRING 
         send_whatsapp_message(phone, f"Ótimo! Para o plano *{plan.replace('_', ' ').capitalize()}* (R$ {price:.2f}), pague com o PIX abaixo:")
         send_whatsapp_message(phone, pix_code)
         send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
