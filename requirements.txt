@@ -1,4 +1,3 @@
-gunicorn
 Flask
 requests
 fpdf2
@@ -6,3 +5,4 @@ pypix
 google-generativeai
 python-dotenv
 APScheduler
+openai
