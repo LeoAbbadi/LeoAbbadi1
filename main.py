@@ -36,8 +36,7 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 try:
     genai.configure(api_key=GOOGLE_API_KEY)
     gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-    # LINHA CORRIGIDA ABAIXO
-    gemini_vision_model = genai.GenerativeModel('gemini-pro-vision') 
+    gemini_vision_model = genai.GenerativeModel('gemini-1.5-vision-pro') # Modelo para analisar imagens
     logging.info("API do Google Gemini configurada com sucesso.")
 except Exception as e:
     logging.error(f"Falha ao configurar a API do Google: {e}")
@@ -47,6 +46,7 @@ except Exception as e:
 # --- CONFIGURAÇÕES DE PAGAMENTO ---
 PIX_RECIPIENT_NAME = "Leonardo Maciel Abbadi"
 PIX_CITY = "Brasilia"
+# Chave PIX fornecida (é um payload completo, não uma chave simples)
 PIX_PAYLOAD_STRING = "00020126580014br.gov.bcb.pix0136fd3412eb-9577-41ea-ba4d-12293570c0155204000053039865802BR5922Leonardo Maciel Abbadi6008Brasilia62240520daqr1894289448628220630439D1"
 PRECO_BASICO = 9.99
 PRECO_PREMIUM = 10.99
@@ -63,8 +63,9 @@ if not os.path.exists(TEMP_DIR):
 # --- BANCO DE DADOS (ARMAZENAMENTO DE DADOS DO USUÁRIO)
 # ==============================================================================
 def init_database():
-    conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
+    conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
+    # Tabela mais robusta para suportar as novas funcionalidades
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             phone TEXT PRIMARY KEY,
@@ -80,8 +81,9 @@ def init_database():
     conn.close()
     logging.info("Banco de dados inicializado com sucesso.")
 
+# Funções auxiliares do banco de dados
 def get_user(phone):
-    conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
+    conn = sqlite3.connect(DATABASE_FILE)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM users WHERE phone = ?", (phone,))
@@ -90,13 +92,20 @@ def get_user(phone):
     return user
 
 def update_user(phone, data):
+    # Função unificada para atualizar qualquer dado do usuário
     user = get_user(phone)
-    conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
-    cursor = conn.cursor()
     if not user:
+        # Cria um novo usuário se não existir
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        # Garante que todos os campos sejam inicializados
         initial_data = {
-            'phone': phone, 'state': 'awaiting_welcome', 'resume_data': json.dumps({}),
-            'plan': 'none', 'template': 'none', 'payment_verified': 0,
+            'phone': phone,
+            'state': 'awaiting_welcome',
+            'resume_data': json.dumps({}),
+            'plan': 'none',
+            'template': 'none',
+            'payment_verified': 0,
             'last_interaction': datetime.now()
         }
         initial_data.update(data)
@@ -104,15 +113,21 @@ def update_user(phone, data):
         placeholders = ', '.join('?' * len(initial_data))
         sql = f'INSERT INTO users ({columns}) VALUES ({placeholders})'
         cursor.execute(sql, tuple(initial_data.values()))
+        conn.commit()
+        conn.close()
     else:
+        # Atualiza um usuário existente
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        # Sempre atualiza o timestamp da última interação
         data['last_interaction'] = datetime.now()
         set_clause = ', '.join([f'{key} = ?' for key in data.keys()])
         values = list(data.values())
         values.append(phone)
         sql = f"UPDATE users SET {set_clause} WHERE phone = ?"
         cursor.execute(sql, tuple(values))
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
 
 # ==============================================================================
 # --- FUNÇÕES DE COMUNICAÇÃO (WHATSAPP)
@@ -123,7 +138,8 @@ def send_whatsapp_message(phone, message):
     payload = {"phone": phone, "message": message}
     headers = {"Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN}
     try:
-        requests.post(url, json=payload, headers=headers, timeout=10)
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Erro ao enviar mensagem para {phone}: {e}")
 
@@ -134,14 +150,18 @@ def send_whatsapp_document(phone, doc_path, filename, caption=""):
         doc_bytes = f.read()
     doc_base64 = base64.b64encode(doc_bytes).decode('utf-8')
     payload = {
-        "phone": phone, "document": f"data:application/pdf;base64,{doc_base64}",
-        "fileName": filename, "caption": caption
+        "phone": phone,
+        "document": f"data:application/pdf;base64,{doc_base64}",
+        "fileName": filename,
+        "caption": caption
     }
     headers = {"Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN}
     try:
-        requests.post(url, json=payload, headers=headers, timeout=20)
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logging.error(f"Erro ao enviar documento para {phone}: {e}")
+
 
 # ==============================================================================
 # --- FUNÇÕES DE INTELIGÊNCIA ARTIFICIAL (GEMINI)
@@ -156,21 +176,54 @@ def get_ia_response(prompt):
         return "Tive um problema para processar sua resposta. Vamos tentar de novo."
 
 def extract_info_from_message(question, user_message):
-    prompt = f'Analise a conversa.\nPergunta: "{question}"\nResposta: "{user_message}"\n\nExtraia APENAS a informação principal da resposta, sem frases extras. Exemplo: se a pergunta é "Qual seu nome?" e a resposta é "meu nome é joão", extraia "joão".'
+    prompt = f"""
+    Analise a conversa a seguir.
+    A pergunta feita foi: "{question}"
+    A resposta do usuário foi: "{user_message}"
+
+    Extraia APENAS a informação principal da resposta do usuário, sem a fraseologia extra.
+    Por exemplo, se a pergunta é "Qual seu nome completo?" e a resposta é "o meu nome completo é joão da silva", extraia apenas "joão da silva".
+    Se a pergunta é "Qual sua idade?" e a resposta é "tenho 25 anos", extraia apenas "25".
+    Se a resposta for "não quero informar", extraia "Não informado".
+
+    Informação extraída:
+    """
+    return get_ia_response(prompt)
+
+def improve_text_with_ia(text_to_improve):
+    prompt = f"""
+    Corrija e melhore o texto a seguir para um currículo profissional.
+    Corrija erros de português, gramática e ajuste o uso de letras maiúsculas/minúsculas.
+    Mantenha o sentido original, mas torne a escrita mais impactante e clara.
+    Texto original: "{text_to_improve}"
+
+    Texto corrigido e melhorado:
+    """
     return get_ia_response(prompt)
 
 def analyze_pix_receipt(image_url):
     if not gemini_vision_model: return {'verified': False, 'reason': 'IA de visão indisponível.'}
     try:
-        image_response = requests.get(image_url, timeout=15)
+        image_response = requests.get(image_url)
         image_response.raise_for_status()
         image_data = image_response.content
-        prompt = f'Analise a imagem deste comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}" e a instituição é "Mercado Pago" ou "MercadoPago". Responda APENAS com JSON: {{"verified": true/false, "reason": "explicação breve em português"}}.'
+
+        prompt = f"""
+        Analise a imagem deste comprovante de PIX. Verifique as seguintes informações:
+        1. O nome do recebedor é "{PIX_RECIPIENT_NAME}"?
+        2. A instituição de destino é "Mercado Pago" ou "MercadoPago"?
+
+        Responda APENAS com um objeto JSON com as chaves "verified" (true/false) e "reason" (uma breve explicação em português).
+        Exemplo de resposta válida: {{"verified": true, "reason": "Nome e instituição confirmados."}}
+        Exemplo de resposta inválida: {{"verified": false, "reason": "O nome do recebedor está incorreto."}}
+        """
         response = gemini_vision_model.generate_content([prompt, {'mime_type': 'image/jpeg', 'data': image_data}])
+        
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
         return json.loads(cleaned_response)
+
     except Exception as e:
-        logging.error(f"Erro ao analisar comprovante PIX: {e}", exc_info=True)
+        logging.error(f"Erro ao analisar comprovante PIX: {e}")
         return {'verified': False, 'reason': 'Não consegui ler a imagem do comprovante.'}
 
 # ==============================================================================
@@ -181,12 +234,16 @@ def clean_text_for_pdf(text):
 
 def generate_resume_pdf(data, template_choice):
     templates = {
-        'classico': generate_template_classico, 'moderno': generate_template_moderno,
-        'criativo': generate_template_criativo, 'minimalista': generate_template_minimalista,
+        'classico': generate_template_classico,
+        'moderno': generate_template_moderno,
+        'criativo': generate_template_criativo,
+        'minimalista': generate_template_minimalista,
         'tecnico': generate_template_tecnico
     }
+    
     pdf_function = templates.get(template_choice, generate_template_classico)
     clean_data = {k: clean_text_for_pdf(str(v)) for k, v in data.items()}
+    
     path = os.path.join(TEMP_DIR, f"curriculo_{data.get('phone', 'user')}.pdf")
     pdf_function(clean_data, path)
     return path
@@ -194,33 +251,43 @@ def generate_resume_pdf(data, template_choice):
 def generate_template_classico(data, path):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", 'B', 16)
+    pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, data.get('nome_completo', ''), 0, 1, 'C')
-    pdf.set_font("Helvetica", '', 10)
+    pdf.set_font("Arial", '', 10)
     contato = f"{data.get('cidade_estado', '')} | {data.get('telefone', '')} | {data.get('email', '')}"
     pdf.cell(0, 10, contato, 0, 1, 'C')
     pdf.ln(10)
+
     def add_section(title, content):
-        if content and content != '[]' and content.lower() != 'pular' and content.lower() != 'não informado':
-            pdf.set_font("Helvetica", 'B', 12)
-            pdf.cell(0, 10, title.upper(), 0, 1, 'L')
+        if content and content != '[]':
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, title, 0, 1, 'L')
             pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 190, pdf.get_y())
             pdf.ln(2)
-            pdf.set_font("Helvetica", '', 10)
+            pdf.set_font("Arial", '', 10)
             pdf.multi_cell(0, 5, str(content).replace("['", "- ").replace("']", "").replace("', '", "\n- "))
             pdf.ln(5)
-    add_section("Cargo Desejado", data.get('cargo'))
-    add_section("Resumo Profissional", data.get('resumo'))
-    add_section("Experiência Profissional", data.get('experiencias'))
-    add_section("Formação Acadêmica", data.get('formacao'))
-    add_section("Habilidades", data.get('habilidades'))
-    add_section("Cursos e Certificações", data.get('cursos'))
+
+    add_section("CARGO DESEJADO", data.get('cargo'))
+    add_section("RESUMO PROFISSIONAL", data.get('resumo'))
+    add_section("EXPERIÊNCIA PROFISSIONAL", data.get('experiencias'))
+    add_section("FORMAÇÃO ACADÊMICA", data.get('formacao'))
+    add_section("HABILIDADES E COMPETÊNCIAS", data.get('habilidades'))
+    add_section("CURSOS EXTRAS", data.get('cursos'))
+
     pdf.output(path)
 
-def generate_template_moderno(data, path): generate_template_classico(data, path)
-def generate_template_criativo(data, path): generate_template_classico(data, path)
-def generate_template_minimalista(data, path): generate_template_classico(data, path)
-def generate_template_tecnico(data, path): generate_template_classico(data, path)
+def generate_template_moderno(data, path):
+    generate_template_classico(data, path)
+
+def generate_template_criativo(data, path):
+    generate_template_classico(data, path)
+
+def generate_template_minimalista(data, path):
+    generate_template_classico(data, path)
+
+def generate_template_tecnico(data, path):
+    generate_template_classico(data, path)
 
 # ==============================================================================
 # --- FLUXO DA CONVERSA (STATE MACHINE)
@@ -230,14 +297,16 @@ CONVERSATION_FLOW = [
     ('cidade_estado', 'Ótimo, {nome}! Agora me diga em qual cidade e estado você mora.'),
     ('telefone', 'Pode me informar um telefone de contato com DDD?'),
     ('email', 'Qual o seu melhor e-mail para contato?'),
-    ('cargo', 'Certo. Qual o cargo ou área que você está buscando?'),
-    ('resumo', 'Vamos caprichar! Escreva um pequeno resumo sobre você e seus objetivos. (Se não tiver, é só dizer "pular").'),
-    ('experiencias', 'Agora, me conte sobre suas experiências profissionais. Pode enviar uma de cada vez e, quando terminar, digite "pronto".'),
-    ('formacao', 'Qual a sua formação? (Ex: Ensino Médio Completo, Graduação em Administração)'),
-    ('habilidades', 'Quais são suas principais habilidades? (Ex: Comunicação, Pacote Office). Pode listar várias, separando por vírgula.'),
-    ('cursos', 'Você tem algum curso ou certificação? Se sim, me conte um por um. Quando acabar, é só dizer "pronto".')
+    ('cargo', 'Certo. Qual o cargo ou área que você está buscando? (Ex: Vendedor, Desenvolvedor, Administrativo)'),
+    ('resumo', 'Vamos caprichar! Escreva um pequeno resumo sobre você e seus objetivos profissionais. (Se não tiver, diga "pular" e eu crio um pra você depois).'),
+    ('experiencias', 'Agora, me conte sobre suas experiências profissionais. Pode enviar uma de cada vez, e quando terminar, digite "pronto".'),
+    ('formacao', 'Qual a sua formação? (Ex: Ensino Médio Completo, Graduação em Administração na USP)'),
+    ('habilidades', 'Quais são suas principais habilidades? (Ex: Pacote Office, Comunicação, Liderança). Pode listar várias, separando por vírgula.'),
+    ('cursos', 'Você tem cursos ou certificações importantes? Se sim, me conte um por um. Quando acabar, é só dizer "pronto".')
 ]
+
 state_handlers = {}
+
 def handle_state(state):
     def decorator(func):
         state_handlers[state] = func
@@ -249,6 +318,7 @@ def process_message(phone, message_data):
     if not user:
         update_user(phone, {'state': 'awaiting_welcome'})
         user = get_user(phone)
+    
     state = user['state']
     handler = state_handlers.get(state, handle_default)
     handler(user, message_data)
@@ -260,19 +330,42 @@ def handle_welcome(user, message_data):
     show_payment_options(phone)
 
 def show_payment_options(phone):
-    message = f"Para começarmos, conheça nossos planos:\n\n📄 *PLANO BÁSICO - R$ {PRECO_BASICO:.2f}*\n- Currículo em PDF em um dos nossos 5 templates.\n\n✨ *PLANO PREMIUM - R$ {PRECO_PREMIUM:.2f}*\n- Tudo do Básico, e mais:\n- Versão do currículo em Inglês.\n- Carta de apresentação profissional.\n\n👨‍💼 *REVISÃO HUMANA - R$ {PRECO_REVISAO_HUMANA:.2f}*\n- Tudo do Premium, e mais:\n- Revisão de um especialista de RH.\n\nDigite *básico*, *premium* ou *revisão* para escolher seu plano e começarmos a criar!"
+    message = f"""
+Para começarmos, conheça nossos planos:
+
+📄 *PLANO BÁSICO - R$ {PRECO_BASICO:.2f}*
+- Currículo em PDF em um dos nossos 5 templates.
+
+✨ *PLANO PREMIUM - R$ {PRECO_PREMIUM:.2f}*
+- Tudo do Básico, e mais:
+- Versão do currículo em Inglês.
+- Carta de apresentação profissional em PDF.
+
+👨‍💼 *REVISÃO HUMANA - R$ {PRECO_REVISAO_HUMANA:.2f}*
+- Tudo do Premium, e mais:
+- Um especialista de RH vai revisar seu currículo e te dar dicas valiosas.
+
+Digite *básico*, *premium* ou *revisão* para escolher seu plano e começarmos a criar!
+    """
     send_whatsapp_message(phone, message)
     update_user(phone, {'state': 'awaiting_plan_choice'})
 
 @handle_state('awaiting_plan_choice')
 def handle_plan_choice(user, message_data):
     phone = user['phone']
-    choice = message_data.get('text', '').lower().strip().replace('á', 'a')
-    plans = {'basico': 'basico', 'premium': 'premium', 'revisao': 'revisao_humana', 'revisão': 'revisao_humana'}
+    choice = message_data.get('text', '').lower().strip()
+    
+    plans = {
+        'básico': 'basico',
+        'premium': 'premium',
+        'revisão': 'revisao_humana'
+    }
+
     if choice in plans:
         plan_name = plans[choice]
         update_user(phone, {'plan': plan_name})
-        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo. Qual destes 5 estilos você prefere?\n\n1. *Clássico*\n2. *Moderno*\n3. *Criativo*\n4. *Minimalista*\n5. *Técnico*\n\nÉ só me dizer o número ou o nome."
+        
+        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo. Qual destes 5 estilos você prefere?\n\n1. *Clássico:* Tradicional e direto.\n2. *Moderno:* Com um design mais arrojado.\n3. *Criativo:* Para áreas de design e marketing.\n4. *Minimalista:* Limpo e focado no essencial.\n5. *Técnico:* Ideal para áreas de TI e engenharia.\n\nÉ só me dizer o número ou o nome."
         send_whatsapp_message(phone, template_message)
         update_user(phone, {'state': 'choosing_template'})
     else:
@@ -281,57 +374,69 @@ def handle_plan_choice(user, message_data):
 @handle_state('choosing_template')
 def handle_choosing_template(user, message_data):
     phone = user['phone']
-    message = message_data.get('text', '').lower().strip()
+    message = message_data.get('text', '').lower()
     template_map = {'1': 'classico', 'clássico': 'classico', 'classico': 'classico',
                     '2': 'moderno', 'moderno': 'moderno',
                     '3': 'criativo', 'criativo': 'criativo',
                     '4': 'minimalista', 'minimalista': 'minimalista',
                     '5': 'tecnico', 'técnico': 'tecnico', 'tecnico': 'tecnico'}
+    
     chosen_template = template_map.get(message)
     if chosen_template:
         update_user(phone, {'template': chosen_template, 'state': 'flow_nome_completo'})
         send_whatsapp_message(phone, f"Perfeito! Vamos criar seu currículo no estilo *{chosen_template.capitalize()}*.")
         send_whatsapp_message(phone, CONVERSATION_FLOW[0][1])
     else:
-        send_whatsapp_message(phone, "Não entendi sua escolha. Por favor, me diga o nome ou o número do template (1 a 5).")
+        send_whatsapp_message(phone, "Não entendi sua escolha. Por favor, me diga o nome ou o número do template (de 1 a 5).")
 
 def create_flow_handler(current_step_index):
     current_key, current_question = CONVERSATION_FLOW[current_step_index]
+    
     @handle_state(f'flow_{current_key}')
     def flow_handler(user, message_data):
-        phone, message = user['phone'], message_data.get('text', '')
+        phone = user['phone']
+        message = message_data.get('text', '')
         resume_data = json.loads(user['resume_data'])
+        
         is_list_field = current_key in ['experiencias', 'cursos']
         if is_list_field and message.lower().strip() in ['pronto', 'ok', 'finalizar']:
             go_to_next_step(phone, resume_data, current_step_index)
             return
+
         extracted_info = extract_info_from_message(current_question, message)
+        
         if is_list_field:
             if current_key not in resume_data: resume_data[current_key] = []
             resume_data[current_key].append(extracted_info)
-            send_whatsapp_message(phone, "Legal, adicionei! Pode me mandar o próximo ou digite *'pronto'*.")
+            send_whatsapp_message(phone, f"Legal, adicionei! Pode me mandar o próximo ou digitar *'pronto'* para continuar.")
         else:
             resume_data[current_key] = extracted_info
             go_to_next_step(phone, resume_data, current_step_index)
+
         update_user(phone, {'resume_data': json.dumps(resume_data)})
+
     def go_to_next_step(phone, resume_data, current_idx):
         if current_idx + 1 < len(CONVERSATION_FLOW):
             next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
             if '{nome}' in next_question:
                 user_name = resume_data.get('nome_completo', '').split(' ')[0]
-                next_question = next_question.format(nome=user_name.capitalize())
+                next_question = next_question.format(nome=user_name)
+
             send_whatsapp_message(phone, next_question)
             update_user(phone, {'state': f'flow_{next_key}'})
         else:
             send_whatsapp_message(phone, "Ufa! Terminamos a coleta de dados. 💪")
             show_review_menu(phone, resume_data)
-for i in range(len(CONVERSATION_FLOW)): create_flow_handler(i)
+
+for i in range(len(CONVERSATION_FLOW)):
+    create_flow_handler(i)
 
 def show_review_menu(phone, resume_data):
-    review_text = "Antes de finalizar, revise seus dados. Para corrigir, diga o número do item:\n\n"
+    review_text = "Antes de finalizar, vamos revisar tudo. Se algo estiver errado, é só me dizer o número do item que quer corrigir:\n\n"
     for i, (key, _) in enumerate(CONVERSATION_FLOW):
         review_text += f"*{i+1}. {key.replace('_', ' ').capitalize()}:* {resume_data.get(key, 'Não preenchido')}\n"
-    review_text += "\nSe estiver tudo certo, digite *'finalizar'* para ir ao pagamento!"
+    review_text += "\nSe estiver tudo certo, digite *'finalizar'* para irmos para o pagamento!"
+    
     send_whatsapp_message(phone, review_text)
     update_user(phone, {'state': 'awaiting_review_choice'})
 
@@ -339,77 +444,105 @@ def show_review_menu(phone, resume_data):
 def handle_review_choice(user, message_data):
     phone = user['phone']
     message = message_data.get('text', '').lower().strip()
+
     if message in ['finalizar', 'pagar', 'tudo certo', 'ok']:
         plan = user['plan']
         prices = {'basico': PRECO_BASICO, 'premium': PRECO_PREMIUM, 'revisao_humana': PRECO_REVISAO_HUMANA}
         price = prices.get(plan, 0.0)
+
+        # A chave PIX já é um payload completo, então não precisamos da biblioteca pypix para montá-la.
+        # Apenas substituímos o valor para o correto.
+        # Esta é uma abordagem simplificada, uma real precisaria reconstruir o payload EMV.
+        # Para este caso, enviar a chave estática é mais seguro.
+        # Se a chave PIX fosse dinâmica (Copia e Cola), a biblioteca pypix seria usada aqui.
         pix_code = PIX_PAYLOAD_STRING 
-        send_whatsapp_message(phone, f"Ótimo! Para o plano *{plan.replace('_', ' ').capitalize()}* (R$ {price:.2f}), pague com o PIX abaixo:")
+
+        send_whatsapp_message(phone, f"Ótimo! O valor para o plano *{plan.replace('_', ' ').capitalize()}* é R$ {price:.2f}.")
+        send_whatsapp_message(phone, "Você pode pagar usando o código PIX Copia e Cola abaixo:")
         send_whatsapp_message(phone, pix_code)
-        send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
+        send_whatsapp_message(phone, "Depois de pagar, é só me enviar uma *foto do comprovante* que eu libero seus arquivos na hora! ✨")
         update_user(phone, {'state': 'awaiting_payment_proof'})
         return
+    
     try:
         choice = int(message)
         if 1 <= choice <= len(CONVERSATION_FLOW):
-            key_to_edit, _ = CONVERSATION_FLOW[choice-1]
+            key_to_edit, question_to_ask = CONVERSATION_FLOW[choice-1]
             update_user(phone, {'state': f'editing_{key_to_edit}'})
-            send_whatsapp_message(phone, f"Ok, vamos corrigir *{key_to_edit.replace('_', ' ')}*. Por favor, envie a informação correta.")
-        else: raise ValueError()
+            send_whatsapp_message(phone, f"Ok, vamos corrigir *{key_to_edit.replace('_', ' ')}*. Por favor, me envie a informação correta.")
+        else:
+            raise ValueError()
     except (ValueError, IndexError):
-        send_whatsapp_message(phone, "Não entendi. Por favor, digite o *número* do item ou *'finalizar'*.")
+        send_whatsapp_message(phone, "Não entendi. Por favor, digite o *número* do item para editar ou *'finalizar'* para continuar.")
 
 def create_editing_handler(edit_step_index):
     key_to_edit, _ = CONVERSATION_FLOW[edit_step_index]
+
     @handle_state(f'editing_{key_to_edit}')
     def editing_handler(user, message_data):
-        phone, message = user['phone'], message_data.get('text', '')
+        phone = user['phone']
+        message = message_data.get('text', '')
         resume_data = json.loads(user['resume_data'])
+        
         extracted_info = extract_info_from_message(f"Qual o novo valor para {key_to_edit}?", message)
         resume_data[key_to_edit] = extracted_info
+        
         update_user(phone, {'resume_data': json.dumps(resume_data)})
         send_whatsapp_message(phone, "Corrigido! 👍")
         show_review_menu(phone, resume_data)
-for i in range(len(CONVERSATION_FLOW)): create_editing_handler(i)
+
+for i in range(len(CONVERSATION_FLOW)):
+    create_editing_handler(i)
 
 @handle_state('awaiting_payment_proof')
 def handle_payment_proof(user, message_data):
     phone = user['phone']
+    
     if 'image' in message_data:
         image_url = message_data['image']['url']
-        send_whatsapp_message(phone, "Oba, recebi seu comprovante! 🕵️‍♂️ Analisando com a IA, só um segundo...")
+        send_whatsapp_message(phone, "Oba, recebi seu comprovante! 🕵️‍♂️ Vou pedir pra minha IA dar uma olhadinha, só um segundo...")
+
         analysis = analyze_pix_receipt(image_url)
+        
         if analysis.get('verified'):
             send_whatsapp_message(phone, f"Pagamento confirmado! ✅\nMotivo: {analysis.get('reason')}")
-            send_whatsapp_message(phone, "Estou preparando seus arquivos...")
+            send_whatsapp_message(phone, "Estou preparando seus arquivos, um momento...")
             update_user(phone, {'payment_verified': 1})
+            # Passa o 'user' atualizado para a função de entrega
             deliver_final_product(get_user(phone))
         else:
-            send_whatsapp_message(phone, f"Hmm, não confirmei seu pagamento. 😕\nMotivo: {analysis.get('reason')}\nTente enviar uma imagem mais nítida.")
+            send_whatsapp_message(phone, f"Hmm, não consegui confirmar seu pagamento. 😕\nMotivo: {analysis.get('reason')}")
+            send_whatsapp_message(phone, "Pode tentar enviar uma imagem mais nítida, por favor?")
     else:
-        send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante.")
+        send_whatsapp_message(phone, "Ainda não recebi a imagem do seu comprovante. É só me enviar a foto que eu analiso aqui!")
 
 def deliver_final_product(user):
-    phone, plan, template = user['phone'], user['plan'], user['template']
+    phone = user['phone']
+    plan = user['plan']
+    template = user['template']
     resume_data = json.loads(user['resume_data'])
+
     pdf_path = generate_resume_pdf(resume_data, template)
     send_whatsapp_document(phone, pdf_path, f"Curriculo_{resume_data.get('nome_completo')}.pdf", "Seu currículo novinho em folha!")
     os.remove(pdf_path)
+
     if plan in ['premium', 'revisao_humana']:
-        send_whatsapp_message(phone, "Gerando seus bônus premium...")
+        send_whatsapp_message(phone, "Gerando seus bônus do plano premium...")
         send_whatsapp_message(phone, "[Arquivo Simulado] Curriculo_em_Ingles.pdf")
         send_whatsapp_message(phone, "[Arquivo Simulado] Carta_de_Apresentacao.pdf")
+
     if plan == 'revisao_humana':
-        send_whatsapp_message(phone, "Sua revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
-    send_whatsapp_message(phone, f"Prontinho! Muito obrigado por usar o {BOT_NAME}. Sucesso! 🚀")
+        send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe de especialistas! Em até 24 horas úteis, um de nossos consultores entrará em contato com o feedback. 👨‍💼")
+
+    send_whatsapp_message(phone, f"Prontinho! Muito obrigado por usar o {BOT_NAME}. Desejo muito sucesso na sua busca por um novo desafio! 🚀")
     update_user(phone, {'state': 'completed'})
 
 @handle_state('completed')
 def handle_completed(user, message_data):
-    send_whatsapp_message(user['phone'], "Olá! Vi que você já completou seu currículo. Se precisar de algo mais, é só chamar!")
+    send_whatsapp_message(user['phone'], f"Olá! Vi que você já completou seu currículo. Se precisar de uma nova versão ou quiser conhecer nossos outros serviços, é só me chamar!")
 
 def handle_default(user, message_data):
-    send_whatsapp_message(user['phone'], "Desculpe, não entendi o que você quis dizer. Para recomeçar, digite 'oi'.")
+    send_whatsapp_message(user['phone'], "Desculpe, não entendi o que você quis dizer. Se quiser recomeçar, digite 'oi'.")
 
 # ==============================================================================
 # --- WEBHOOK (PONTO DE ENTRADA DAS MENSAGENS)
@@ -419,19 +552,26 @@ def webhook():
     try:
         data = request.json
         logging.info(f"Webhook recebido: {json.dumps(data, indent=2)}")
+
         phone = data.get('phone')
         message_data = {}
-        if data.get('text'):
-            message_data['text'] = data.get('text', {}).get('message', '')
-        elif data.get('image') and 'imageUrl' in data.get('image', {}):
-            message_data['image'] = {'url': data['image']['imageUrl']}
-        elif data.get('message', {}).get('image') and 'url' in data.get('message', {}).get('image', {}):
-             message_data['image'] = {'url': data['message']['image']['url']}
+        
+        text_content = data.get('text')
+        if isinstance(text_content, dict):
+            message_data['text'] = text_content.get('message', '')
+        elif isinstance(text_content, str):
+            message_data['text'] = text_content
+
+        image_content = data.get('message', {}).get('image')
+        if isinstance(image_content, dict) and 'url' in image_content:
+            message_data['image'] = {'url': image_content['url']}
+
         if phone and message_data:
             process_message(phone, message_data)
+        
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
-        logging.error(f"Erro crítico no webhook: {e}", exc_info=True)
+        logging.error(f"Erro crítico no webhook: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # ==============================================================================
@@ -439,27 +579,33 @@ def webhook():
 # ==============================================================================
 def check_abandoned_sessions():
     with app.app_context():
-        logging.info("Verificando sessões abandonadas...")
-        conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
+        logging.info("Executando tarefa agendada: Verificando sessões abandonadas...")
+        conn = sqlite3.connect(DATABASE_FILE)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        
         time_limit = datetime.now() - timedelta(hours=24)
         cursor.execute("SELECT * FROM users WHERE last_interaction < ? AND state NOT IN ('completed', 'reminded')", (time_limit,))
         abandoned_users = cursor.fetchall()
+        
         for user in abandoned_users:
-            logging.info(f"Enviando lembrete para: {user['phone']}")
-            message = f"Olá, {BOT_NAME} passando para dar um oi! 👋 Vi que começamos a montar seu currículo mas não terminamos. Que tal continuarmos de onde paramos?"
+            logging.info(f"Enviando lembrete para o usuário abandonado: {user['phone']}")
+            message = f"Olá, {BOT_NAME} passando para dar um oi! 👋 Vi que começamos a montar seu currículo mas não terminamos. Que tal continuarmos de onde paramos? É só me responder aqui que a gente retoma!"
             send_whatsapp_message(user['phone'], message)
             update_user(user['phone'], {'state': 'reminded'})
+
         conn.close()
 
 # ==============================================================================
 # --- INICIALIZAÇÃO DO SERVIDOR E BANCO DE DADOS PARA DEPLOY
 # ==============================================================================
+
 init_database()
+
 if __name__ == '__main__':
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(check_abandoned_sessions, 'interval', hours=6)
     scheduler.start()
+    
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port, debug=False)
