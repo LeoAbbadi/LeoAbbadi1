@@ -580,10 +580,13 @@ def webhook():
         phone = data.get('phone')
         message_data = {}
         if 'text' in data:
-            message_data['text'] = data['text']
-        if 'message' in data and 'image' in data['message']:
-             # Assume que o webhook da Z-API para imagem tem essa estrutura
+            message_data['text'] = data.get('text', {}).get('message', '') if isinstance(data.get('text'), dict) else data.get('text')
+        if data.get('type') == 'image' and 'url' in data:
+             message_data['image'] = {'url': data['url']}
+        # Fallback for other possible structures from Z-API
+        elif 'message' in data and 'image' in data['message']:
             message_data['image'] = {'url': data['message']['image']['url']}
+
 
         if phone and message_data:
             process_message(phone, message_data)
@@ -605,7 +608,7 @@ def check_abandoned_sessions():
         
         # Pega usuários que não interagem há mais de 24h e não completaram o processo
         time_limit = datetime.now() - timedelta(hours=24)
-        cursor.execute("SELECT * FROM users WHERE last_interaction < ? AND state != 'completed'", (time_limit,))
+        cursor.execute("SELECT * FROM users WHERE last_interaction < ? AND state NOT IN ('completed', 'reminded')", (time_limit,))
         abandoned_users = cursor.fetchall()
         
         for user in abandoned_users:
@@ -618,11 +621,12 @@ def check_abandoned_sessions():
         conn.close()
 
 # ==============================================================================
-# --- INICIALIZAÇÃO DO SERVIDOR
+# --- INICIALIZAÇÃO DO SERVIDOR E BANCO DE DADOS PARA DEPLOY
 # ==============================================================================
+
+init_database()
+
 if __name__ == '__main__':
-    init_database()
-    
     # Inicializa o agendador de tarefas em background
     scheduler = BackgroundScheduler(daemon=True)
     # Roda a verificação a cada 6 horas
