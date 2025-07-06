@@ -164,7 +164,7 @@ def analyze_pix_receipt(image_url):
         image_response = requests.get(image_url, timeout=15)
         image_response.raise_for_status()
         image_data = image_response.content
-        prompt = f'Analise a imagem deste comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}" e a instituição é "Mercado Pago" ou "MercadoPago". Responda APENAS com JSON: {{"verified": true/false, "reason": "explicação breve"}}.'
+        prompt = f'Analise a imagem deste comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}" e a instituição é "Mercado Pago" ou "MercadoPago". Responda APENAS com JSON: {{"verified": true/false, "reason": "explicação breve em português"}}.'
         response = gemini_vision_model.generate_content([prompt, {'mime_type': 'image/jpeg', 'data': image_data}])
         cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
         return json.loads(cleaned_response)
@@ -200,7 +200,7 @@ def generate_template_classico(data, path):
     pdf.cell(0, 10, contato, 0, 1, 'C')
     pdf.ln(10)
     def add_section(title, content):
-        if content and content != '[]':
+        if content and content != '[]' and content.lower() != 'pular' and content.lower() != 'não informado':
             pdf.set_font("Helvetica", 'B', 12)
             pdf.cell(0, 10, title.upper(), 0, 1, 'L')
             pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 190, pdf.get_y())
@@ -230,11 +230,11 @@ CONVERSATION_FLOW = [
     ('telefone', 'Pode me informar um telefone de contato com DDD?'),
     ('email', 'Qual o seu melhor e-mail para contato?'),
     ('cargo', 'Certo. Qual o cargo ou área que você está buscando?'),
-    ('resumo', 'Escreva um pequeno resumo sobre você e seus objetivos. (Se não tiver, diga "pular").'),
-    ('experiencias', 'Me conte sobre suas experiências profissionais. Envie uma de cada vez e digite "pronto" quando terminar.'),
-    ('formacao', 'Qual a sua formação? (Ex: Ensino Médio Completo)'),
-    ('habilidades', 'Liste suas principais habilidades, separando por vírgula.'),
-    ('cursos', 'Tem cursos ou certificações? Envie um por um e digite "pronto" ao acabar.')
+    ('resumo', 'Vamos caprichar! Escreva um pequeno resumo sobre você e seus objetivos. (Se não tiver, é só dizer "pular").'),
+    ('experiencias', 'Agora, me conte sobre suas experiências profissionais. Pode enviar uma de cada vez e, quando terminar, digite "pronto".'),
+    ('formacao', 'Qual a sua formação? (Ex: Ensino Médio Completo, Graduação em Administração)'),
+    ('habilidades', 'Quais são suas principais habilidades? (Ex: Comunicação, Pacote Office). Pode listar várias, separando por vírgula.'),
+    ('cursos', 'Você tem algum curso ou certificação? Se sim, me conte um por um. Quando acabar, é só dizer "pronto".')
 ]
 state_handlers = {}
 def handle_state(state):
@@ -255,47 +255,50 @@ def process_message(phone, message_data):
 @handle_state('awaiting_welcome')
 def handle_welcome(user, message_data):
     phone = user['phone']
-    send_whatsapp_message(phone, f"Olá! Eu sou o {BOT_NAME} 🤖, seu assistente de carreira. Vou te ajudar a criar um currículo profissional incrível!")
+    send_whatsapp_message(phone, f"Olá! Eu sou o {BOT_NAME} 🤖, seu novo assistente de carreira. Vou te ajudar a criar um currículo profissional incrível!")
     show_payment_options(phone)
 
 def show_payment_options(phone):
-    message = f"Para começarmos, conheça nossos planos:\n\n📄 *PLANO BÁSICO - R$ {PRECO_BASICO:.2f}*\n- Currículo em PDF em um dos nossos 5 templates.\n\n✨ *PLANO PREMIUM - R$ {PRECO_PREMIUM:.2f}*\n- Tudo do Básico, e mais:\n- Versão do currículo em Inglês.\n- Carta de apresentação profissional.\n\n👨‍💼 *REVISÃO HUMANA - R$ {PRECO_REVISAO_HUMANA:.2f}*\n- Tudo do Premium, e mais:\n- Revisão de um especialista de RH.\n\nDigite *básico*, *premium* ou *revisão* para escolher."
+    message = f"Para começarmos, conheça nossos planos:\n\n📄 *PLANO BÁSICO - R$ {PRECO_BASICO:.2f}*\n- Currículo em PDF em um dos nossos 5 templates.\n\n✨ *PLANO PREMIUM - R$ {PRECO_PREMIUM:.2f}*\n- Tudo do Básico, e mais:\n- Versão do currículo em Inglês.\n- Carta de apresentação profissional.\n\n👨‍💼 *REVISÃO HUMANA - R$ {PRECO_REVISAO_HUMANA:.2f}*\n- Tudo do Premium, e mais:\n- Revisão de um especialista de RH.\n\nDigite *básico*, *premium* ou *revisão* para escolher seu plano e começarmos a criar!"
     send_whatsapp_message(phone, message)
     update_user(phone, {'state': 'awaiting_plan_choice'})
 
 @handle_state('awaiting_plan_choice')
 def handle_plan_choice(user, message_data):
     phone = user['phone']
-    choice = message_data.get('text', '').lower().strip()
-    plans = {'básico': 'basico', 'premium': 'premium', 'revisão': 'revisao_humana'}
+    choice = message_data.get('text', '').lower().strip().replace('á', 'a')
+    plans = {'basico': 'basico', 'premium': 'premium', 'revisao': 'revisao_humana', 'revisão': 'revisao_humana'}
     if choice in plans:
         plan_name = plans[choice]
         update_user(phone, {'plan': plan_name})
-        template_message = "Ótima escolha! Agora, escolha o visual do seu currículo:\n\n1. *Clássico*\n2. *Moderno*\n3. *Criativo*\n4. *Minimalista*\n5. *Técnico*\n\nÉ só me dizer o número ou o nome."
+        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo. Qual destes 5 estilos você prefere?\n\n1. *Clássico*\n2. *Moderno*\n3. *Criativo*\n4. *Minimalista*\n5. *Técnico*\n\nÉ só me dizer o número ou o nome."
         send_whatsapp_message(phone, template_message)
         update_user(phone, {'state': 'choosing_template'})
     else:
-        send_whatsapp_message(phone, "Plano não reconhecido. Escolha *básico*, *premium* ou *revisão*.")
+        send_whatsapp_message(phone, "Plano não reconhecido. Por favor, escolha entre *básico*, *premium* ou *revisão*.")
 
 @handle_state('choosing_template')
 def handle_choosing_template(user, message_data):
     phone = user['phone']
-    message = message_data.get('text', '').lower()
-    template_map = {'1': 'classico', 'clássico': 'classico', '2': 'moderno', '3': 'criativo', '4': 'minimalista', '5': 'tecnico'}
-    chosen_template = template_map.get(message, template_map.get(message.split(' ')[0]))
+    message = message_data.get('text', '').lower().strip()
+    template_map = {'1': 'classico', 'clássico': 'classico', 'classico': 'classico',
+                    '2': 'moderno', 'moderno': 'moderno',
+                    '3': 'criativo', 'criativo': 'criativo',
+                    '4': 'minimalista', 'minimalista': 'minimalista',
+                    '5': 'tecnico', 'técnico': 'tecnico', 'tecnico': 'tecnico'}
+    chosen_template = template_map.get(message)
     if chosen_template:
         update_user(phone, {'template': chosen_template, 'state': 'flow_nome_completo'})
         send_whatsapp_message(phone, f"Perfeito! Vamos criar seu currículo no estilo *{chosen_template.capitalize()}*.")
         send_whatsapp_message(phone, CONVERSATION_FLOW[0][1])
     else:
-        send_whatsapp_message(phone, "Não entendi. Diga o nome ou o número do template (1 a 5).")
+        send_whatsapp_message(phone, "Não entendi sua escolha. Por favor, me diga o nome ou o número do template (1 a 5).")
 
 def create_flow_handler(current_step_index):
     current_key, current_question = CONVERSATION_FLOW[current_step_index]
     @handle_state(f'flow_{current_key}')
     def flow_handler(user, message_data):
-        phone = user['phone']
-        message = message_data.get('text', '')
+        phone, message = user['phone'], message_data.get('text', '')
         resume_data = json.loads(user['resume_data'])
         is_list_field = current_key in ['experiencias', 'cursos']
         if is_list_field and message.lower().strip() in ['pronto', 'ok', 'finalizar']:
@@ -315,7 +318,7 @@ def create_flow_handler(current_step_index):
             next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
             if '{nome}' in next_question:
                 user_name = resume_data.get('nome_completo', '').split(' ')[0]
-                next_question = next_question.format(nome=user_name)
+                next_question = next_question.format(nome=user_name.capitalize())
             send_whatsapp_message(phone, next_question)
             update_user(phone, {'state': f'flow_{next_key}'})
         else:
@@ -336,12 +339,10 @@ def handle_review_choice(user, message_data):
     phone = user['phone']
     message = message_data.get('text', '').lower().strip()
     if message in ['finalizar', 'pagar', 'tudo certo', 'ok']:
-        plan, price = user['plan'], 0.0
+        plan = user['plan']
         prices = {'basico': PRECO_BASICO, 'premium': PRECO_PREMIUM, 'revisao_humana': PRECO_REVISAO_HUMANA}
         price = prices.get(plan, 0.0)
-        pix = Pix(merchant_name=PIX_RECIPIENT_NAME, merchant_city=PIX_CITY, amount=price)
-        pix.set_description(f"Pagamento Plano {plan.capitalize()}")
-        pix_code = pix.get_br_code_static(pix_key=PIX_PAYLOAD_STRING) # Usar a chave estática
+        pix_code = PIX_PAYLOAD_STRING
         send_whatsapp_message(phone, f"Ótimo! Para o plano *{plan.replace('_', ' ').capitalize()}* (R$ {price:.2f}), pague com o PIX abaixo:")
         send_whatsapp_message(phone, pix_code)
         send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
@@ -352,10 +353,10 @@ def handle_review_choice(user, message_data):
         if 1 <= choice <= len(CONVERSATION_FLOW):
             key_to_edit, _ = CONVERSATION_FLOW[choice-1]
             update_user(phone, {'state': f'editing_{key_to_edit}'})
-            send_whatsapp_message(phone, f"Ok, vamos corrigir *{key_to_edit.replace('_', ' ')}*. Envie a informação correta.")
+            send_whatsapp_message(phone, f"Ok, vamos corrigir *{key_to_edit.replace('_', ' ')}*. Por favor, envie a informação correta.")
         else: raise ValueError()
     except (ValueError, IndexError):
-        send_whatsapp_message(phone, "Não entendi. Digite o *número* do item ou *'finalizar'*.")
+        send_whatsapp_message(phone, "Não entendi. Por favor, digite o *número* do item ou *'finalizar'*.")
 
 def create_editing_handler(edit_step_index):
     key_to_edit, _ = CONVERSATION_FLOW[edit_step_index]
@@ -399,15 +400,15 @@ def deliver_final_product(user):
         send_whatsapp_message(phone, "[Arquivo Simulado] Carta_de_Apresentacao.pdf")
     if plan == 'revisao_humana':
         send_whatsapp_message(phone, "Sua revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
-    send_whatsapp_message(phone, f"Prontinho! Obrigado por usar o {BOT_NAME}. Sucesso! 🚀")
+    send_whatsapp_message(phone, f"Prontinho! Muito obrigado por usar o {BOT_NAME}. Sucesso! 🚀")
     update_user(phone, {'state': 'completed'})
 
 @handle_state('completed')
 def handle_completed(user, message_data):
-    send_whatsapp_message(user['phone'], "Olá! Vi que já completou seu currículo. Se precisar de algo mais, é só chamar!")
+    send_whatsapp_message(user['phone'], "Olá! Vi que você já completou seu currículo. Se precisar de algo mais, é só chamar!")
 
 def handle_default(user, message_data):
-    send_whatsapp_message(user['phone'], "Desculpe, não entendi. Para recomeçar, digite 'oi'.")
+    send_whatsapp_message(user['phone'], "Desculpe, não entendi o que você quis dizer. Para recomeçar, digite 'oi'.")
 
 # ==============================================================================
 # --- WEBHOOK (PONTO DE ENTRADA DAS MENSAGENS)
@@ -423,11 +424,13 @@ def webhook():
             message_data['text'] = data.get('text', {}).get('message', '')
         elif data.get('image') and 'imageUrl' in data.get('image', {}):
             message_data['image'] = {'url': data['image']['imageUrl']}
+        elif data.get('message', {}).get('image') and 'url' in data.get('message', {}).get('image', {}):
+             message_data['image'] = {'url': data['message']['image']['url']}
         if phone and message_data:
             process_message(phone, message_data)
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
-        logging.error(f"Erro crítico no webhook: {e}")
+        logging.error(f"Erro crítico no webhook: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # ==============================================================================
