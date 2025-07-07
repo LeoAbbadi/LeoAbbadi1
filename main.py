@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO DEFINITIVA - CORRIGE CAMINHO DA PASTA 'fonts'
+# VERSÃO DEFINITIVA - 07/Julho - Layouts Avançados e Caminho de Fonte Corrigido
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -52,11 +52,7 @@ PRECO_REVISAO_HUMANA = 15.99
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get('RENDER_DISK_PATH', SCRIPT_DIR)
 DATABASE_FILE = os.path.join(DATA_DIR, 'cadu_database.db')
-
-# --- CORREÇÃO DO CAMINHO DAS FONTES ---
-# Aponta para a subpasta 'fonts' dentro do diretório do projeto
 FONT_DIR = os.path.join(SCRIPT_DIR, 'fonts')
-
 TEMP_DIR = "/tmp"
 if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
@@ -174,7 +170,7 @@ def analyze_pix_receipt(image_url):
         return {'verified': False, 'reason': 'Não consegui ler a imagem do comprovante.'}
 
 def translate_resume_data_to_english(resume_data):
-    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Mantenha a mesma estrutura JSON, mas traduza tanto as chaves (keys) quanto os valores (values) para o inglês. Use chaves em inglês como: 'full_name', 'city_state', 'phone', 'email', 'desired_role', 'professional_summary', 'work_experience', 'education', 'skills', 'courses_certifications'."
+    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Traduza tanto as chaves (keys) quanto os valores (values) para o inglês. Use estas chaves em inglês: 'full_name', 'city_state', 'phone', 'email', 'desired_role', 'professional_summary', 'work_experience', 'education', 'skills', 'courses_certifications'."
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": json.dumps(resume_data, ensure_ascii=False)}]
     translated_json_str = get_openai_response(messages, is_json=True)
     try:
@@ -205,102 +201,133 @@ def improve_experience_descriptions(experiences):
 # ==============================================================================
 # --- GERAÇÃO DE PDF
 # ==============================================================================
-def generate_resume_pdf(data, template_choice):
+class PDF(FPDF):
+    def add_font_setup(self):
+        try:
+            self.add_font('DejaVu', '', os.path.join(FONT_DIR, 'DejaVuSans.ttf'), uni=True)
+            self.add_font('DejaVu', 'B', os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf'), uni=True)
+            self.font_regular = 'DejaVu'
+            self.font_bold = 'DejaVu'
+        except RuntimeError as e:
+            logging.error(f"ERRO DE FONTE: {e}. Usando Helvetica como fallback.")
+            self.font_regular = 'Helvetica'
+            self.font_bold = 'Helvetica'
+
+def generate_resume_pdf(data, template_choice, path):
+    # Roteador para a função de template correta
+    # Por enquanto, todos levam ao novo template moderno para garantir a qualidade.
     templates = {
-        'classico': generate_template_moderno, 'moderno': generate_template_moderno,
-        'criativo': generate_template_moderno, 'minimalista': generate_template_moderno,
+        'classico': generate_template_moderno, 
+        'moderno': generate_template_moderno,
+        'criativo': generate_template_moderno, 
+        'minimalista': generate_template_moderno,
         'tecnico': generate_template_moderno
     }
     pdf_function = templates.get(template_choice, generate_template_moderno)
-    path = os.path.join(TEMP_DIR, f"curriculo_{data.get('phone', 'user')}.pdf")
     pdf_function(data, path)
-    return path
 
 def generate_simple_text_pdf(text, path):
-    pdf = FPDF()
+    pdf = PDF()
+    pdf.add_font_setup()
     pdf.add_page()
-    try:
-        pdf.add_font('DejaVu', '', os.path.join(FONT_DIR, 'DejaVuSans.ttf'), uni=True)
-        pdf.set_font('DejaVu', '', 11)
-    except RuntimeError:
-        logging.warning("Fonte DejaVu não encontrada, usando Helvetica.")
-        pdf.set_font("Helvetica", '', 11)
+    pdf.set_font(pdf.font_regular, '', 11)
     pdf.multi_cell(0, 7, text)
     pdf.output(path)
 
 def generate_template_moderno(data, path):
-    pdf = FPDF()
+    pdf = PDF()
+    pdf.add_font_setup()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    try:
-        pdf.add_font('DejaVu', '', os.path.join(FONT_DIR, 'DejaVuSans.ttf'), uni=True)
-        pdf.add_font('DejaVu', 'B', os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf'), uni=True)
-        FONT_REGULAR, FONT_BOLD = 'DejaVu', 'DejaVu'
-    except RuntimeError as e:
-        logging.error(f"ERRO CRÍTICO DE FONTE: {e}. O PDF será gerado com fontes padrão.")
-        FONT_REGULAR, FONT_BOLD = 'Helvetica', 'Helvetica'
+    # Cores e fontes
+    SIDEBAR_COLOR = (52, 73, 94)  # Azul escuro/cinza
+    ACCENT_COLOR = (46, 204, 113) # Verde
     
-    SIDEBAR_COLOR = (52, 58, 64)
-    ACCENT_COLOR = (73, 126, 174)
-    
+    # --- Coluna da Esquerda (Sidebar) ---
     pdf.set_fill_color(*SIDEBAR_COLOR)
     pdf.rect(0, 0, 70, 297, 'F')
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_xy(10, 25)
     
-    def add_sidebar_section(title_pt, title_en, content_pt, content_en):
-        title = title_en if content_en else title_pt
-        content = content_en if content_en else content_pt
-        if content and str(content).strip() != '[]':
+    # Define o ponto de início para o conteúdo da sidebar
+    pdf.set_xy(10, 20)
+    pdf.set_text_color(255, 255, 255)
+    
+    # Seção de Contato
+    pdf.set_font(pdf.font_bold, 'B', 12)
+    pdf.cell(0, 10, data.get('contato_titulo', 'CONTATO'), 0, 1)
+    pdf.set_font(pdf.font_regular, '', 9)
+    
+    contact_info = [
+        data.get('email', ''),
+        data.get('telefone') or data.get('phone'),
+        data.get('cidade_estado') or data.get('city_state')
+    ]
+    for info in contact_info:
+        if info:
             pdf.set_x(10)
-            pdf.set_font(FONT_BOLD, 'B', 12)
+            pdf.multi_cell(55, 5, info, 0, 'L')
+            pdf.ln(2) # Espaçamento dinâmico
+    pdf.ln(8)
+
+    # Função para seções da sidebar
+    def add_sidebar_section(title_pt, title_en, content_pt, content_en):
+        title = title_en or title_pt
+        content = content_en or content_pt
+        if content:
+            pdf.set_x(10)
+            pdf.set_font(pdf.font_bold, 'B', 12)
             pdf.cell(0, 10, title.upper(), 0, 1)
-            pdf.set_font(FONT_REGULAR, '', 9)
-            pdf.multi_cell(55, 5, str(content).replace(",", "\n• "), 0, 'L')
+            pdf.set_font(pdf.font_regular, '', 9)
+            if isinstance(content, list):
+                content = "\n".join([f"• {item}" for item in content])
+            pdf.multi_cell(55, 5, content, 0, 'L')
             pdf.ln(8)
             
-    add_sidebar_section("Contato", "Contact", data.get('email'), data.get('email'))
-    add_sidebar_section("", "", data.get('telefone'), data.get('phone'))
-    add_sidebar_section("", "", data.get('cidade_estado'), data.get('city_state'))
     add_sidebar_section("Formação", "Education", data.get('formacao'), data.get('education'))
     add_sidebar_section("Habilidades", "Skills", data.get('habilidades'), data.get('skills'))
 
+    # --- Coluna da Direita (Conteúdo Principal) ---
     pdf.set_xy(80, 15)
     pdf.set_text_color(0, 0, 0)
     
-    pdf.set_font(FONT_BOLD, 'B', 28)
+    pdf.set_font(pdf.font_bold, 'B', 28)
     pdf.multi_cell(120, 12, data.get('nome_completo') or data.get('full_name'))
-    pdf.set_font(FONT_REGULAR, '', 14)
+    pdf.set_font(pdf.font_regular, '', 14)
     pdf.set_text_color(80, 80, 80)
     pdf.set_x(80)
     pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'L')
     pdf.ln(10)
     
-    def add_right_section(title_pt, title_en, content_pt, content_en):
-        title = title_en if content_en else title_pt
-        content = content_en if content_en else content_pt
-        if content and str(content) != '[]' and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
+    # Função para seções da direita com bullets e espaçamento dinâmico
+    def add_right_section(title, content):
+        if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
             pdf.set_x(80)
-            pdf.set_font(FONT_BOLD, 'B', 14)
+            pdf.set_font(pdf.font_bold, 'B', 14)
             pdf.set_text_color(0,0,0)
             pdf.cell(0, 8, title.upper(), 0, 1, 'L')
             pdf.set_draw_color(*ACCENT_COLOR)
             pdf.line(80, pdf.get_y(), 130, pdf.get_y())
             pdf.ln(5)
-            pdf.set_font(FONT_REGULAR, '', 10)
-            cleaned_content = str(content).replace("['", "\n• ").replace("']", "").replace("', '", "\n• ").replace("[]", "")
-            pdf.multi_cell(120, 6, cleaned_content)
+            pdf.set_font(pdf.font_regular, '', 10)
+            if isinstance(content, list):
+                for item in content:
+                    pdf.set_x(85)
+                    pdf.multi_cell(115, 6, f"• {item}")
+                    pdf.ln(1)
+            else:
+                pdf.set_x(80)
+                pdf.multi_cell(120, 6, content)
             pdf.ln(6)
-            
-    add_right_section('Resumo Profissional', 'Professional Summary', data.get('resumo'), data.get('professional_summary'))
-    add_right_section('Experiência Profissional', 'Work Experience', data.get('experiencias'), data.get('work_experience'))
-    add_right_section('Cursos e Certificações', 'Courses & Certifications', data.get('cursos'), data.get('courses_certifications'))
+    
+    add_right_section(data.get('resumo_titulo', 'Resumo Profissional'), data.get('resumo') or data.get('professional_summary'))
+    add_right_section(data.get('experiencias_titulo', 'Experiência Profissional'), data.get('experiencias') or data.get('work_experience'))
+    add_right_section(data.get('cursos_titulo', 'Cursos e Certificações'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
 # ==============================================================================
 # --- FLUXO DA CONVERSA
 # ==============================================================================
+# (O fluxo da conversa continua o mesmo da versão anterior)
 CONVERSATION_FLOW = [
     ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
     ('cidade_estado', 'Ótimo, {nome}! Agora me diga em qual cidade e estado você mora.'),
@@ -477,7 +504,7 @@ def handle_payment_proof(user, message_data):
             update_user(phone, {'payment_verified': 1})
             deliver_final_product(get_user(phone))
         else:
-            send_whatsapp_message(phone, "Hmm, não confirmei seu pagamento. Tente enviar uma imagem mais nítida.")
+            send_whatsapp_message(phone, f"Hmm, não confirmei seu pagamento. Tente enviar uma imagem mais nítida.")
     else:
         send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante.")
 
@@ -485,16 +512,18 @@ def deliver_final_product(user):
     phone, plan, template = user['phone'], user['plan'], user['template']
     resume_data = json.loads(user['resume_data'])
     send_whatsapp_message(phone, "Preparando seu currículo principal...")
-    pdf_path = generate_resume_pdf(resume_data, template)
-    send_whatsapp_document(phone, pdf_path, f"Curriculo_{resume_data.get('nome_completo', 'user').split(' ')[0]}.pdf", "Seu currículo novinho em folha!")
+    pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{resume_data.get('nome_completo', 'user').split(' ')[0]}.pdf")
+    generate_resume_pdf(resume_data, template, pdf_path)
+    send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), "Seu currículo novinho em folha!")
     os.remove(pdf_path)
     if plan in ['premium', 'revisao_humana']:
         send_whatsapp_message(phone, "Agora, gerando seus bônus do plano premium...")
         send_whatsapp_message(phone, "Traduzindo seu currículo para o Inglês...")
         english_data = translate_resume_data_to_english(resume_data)
         if english_data:
-            english_pdf_path = generate_resume_pdf(english_data, template)
-            send_whatsapp_document(phone, english_pdf_path, f"Resume_English_{english_data.get('full_name', 'user').split(' ')[0]}.pdf", "Aqui está sua versão em Inglês!")
+            english_pdf_path = os.path.join(TEMP_DIR, f"Resume_English_{english_data.get('full_name', 'user').split(' ')[0]}.pdf")
+            generate_resume_pdf(english_data, template, english_pdf_path)
+            send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), "Aqui está sua versão em Inglês!")
             os.remove(english_pdf_path)
         send_whatsapp_message(phone, "Escrevendo sua carta de apresentação personalizada...")
         cover_letter_text = generate_cover_letter_text(resume_data)
