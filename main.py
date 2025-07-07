@@ -15,7 +15,7 @@ import requests
 from flask import Flask, request, jsonify
 from fpdf import FPDF
 from pypix import Pix
-import openai # Apenas a OpenAI é necessária agora
+import openai
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Configuração do logging para ver o que o bot está fazendo
@@ -147,7 +147,7 @@ def send_whatsapp_document(phone, doc_path, filename, caption=""):
 def get_openai_response(prompt_messages, is_json=False):
     if not openai.api_key: return "Desculpe, minha IA (OpenAI) não está configurada."
     try:
-        model_to_use = "gpt-4o"
+        model_to_use = "gpt-4o" 
         response_format = {"type": "json_object"} if is_json else {"type": "text"}
         completion = openai.chat.completions.create(
             model=model_to_use,
@@ -182,11 +182,41 @@ def analyze_pix_receipt(image_url):
         logging.error(f"Erro ao analisar comprovante PIX com OpenAI: {e}", exc_info=True)
         return {'verified': False, 'reason': 'Não consegui ler a imagem do comprovante.'}
 
+# --- NOVAS FUNÇÕES PARA O PLANO PREMIUM ---
+def translate_resume_data_to_english(resume_data_json):
+    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Mantenha a mesma estrutura JSON e os mesmos nomes de chaves (keys). Apenas traduza os valores (values)."
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": resume_data_json}
+    ]
+    translated_json_str = get_openai_response(messages, is_json=True)
+    try:
+        return json.loads(translated_json_str)
+    except json.JSONDecodeError:
+        logging.error("Falha ao decodificar JSON da tradução.")
+        return None
+
+def generate_cover_letter_text(resume_data):
+    system_prompt = "Você é um coach de carreira e redator profissional. Escreva uma carta de apresentação concisa, profissional e impactante com base nos dados do currículo a seguir. A carta deve ser em português."
+    user_prompt = f"Dados do currículo:\n{json.dumps(resume_data, indent=2, ensure_ascii=False)}\n\nPor favor, escreva a carta de apresentação."
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    return get_openai_response(messages)
+
 # ==============================================================================
-# --- GERAÇÃO DE PDF (5 TEMPLATES)
+# --- GERAÇÃO DE PDF
 # ==============================================================================
 def clean_text_for_pdf(text):
     return text.encode('latin-1', 'replace').decode('latin-1')
+
+def generate_simple_text_pdf(text, path):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", '', 12)
+    pdf.multi_cell(0, 10, clean_text_for_pdf(text))
+    pdf.output(path)
 
 def generate_resume_pdf(data, template_choice):
     templates = {
@@ -210,13 +240,16 @@ def generate_template_classico(data, path):
     pdf.cell(0, 10, contato, 0, 1, 'C')
     pdf.ln(10)
     def add_section(title, content):
-        if content and content != '[]' and content.lower() != 'pular' and content.lower() != 'não informado':
+        # Aprimorado para não mostrar seções vazias ou com comandos
+        if content and str(content).strip() and str(content) != '[]' and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
             pdf.set_font("Helvetica", 'B', 12)
             pdf.cell(0, 10, title.upper(), 0, 1, 'L')
             pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 190, pdf.get_y())
             pdf.ln(2)
             pdf.set_font("Helvetica", '', 10)
-            pdf.multi_cell(0, 5, str(content).replace("['", "- ").replace("']", "").replace("', '", "\n- "))
+            # Limpa a formatação de lista para o PDF
+            cleaned_content = str(content).replace("['", "- ").replace("']", "").replace("', '", "\n- ").replace("[]", "")
+            pdf.multi_cell(0, 5, cleaned_content)
             pdf.ln(5)
     add_section("Cargo Desejado", data.get('cargo'))
     add_section("Resumo Profissional", data.get('resumo'))
@@ -311,17 +344,14 @@ def create_flow_handler(current_step_index):
         phone, message = user['phone'], message_data.get('text', '')
         resume_data = json.loads(user['resume_data'])
         is_list_field = current_key in ['experiencias', 'cursos']
-        
         simple_command = message.lower().strip()
         if is_list_field and simple_command in ['pronto', 'ok', 'finalizar']:
             go_to_next_step(phone, resume_data, current_step_index)
             return
-        
         if current_key == 'resumo' and simple_command == 'pular':
             extracted_info = "Não informado"
         else:
             extracted_info = extract_info_from_message(current_question, message)
-
         if is_list_field:
             if current_key not in resume_data: resume_data[current_key] = []
             resume_data[current_key].append(extracted_info)
@@ -408,17 +438,38 @@ def handle_payment_proof(user, message_data):
 def deliver_final_product(user):
     phone, plan, template = user['phone'], user['plan'], user['template']
     resume_data = json.loads(user['resume_data'])
+
+    # 1. Enviar currículo principal
     pdf_path = generate_resume_pdf(resume_data, template)
-    send_whatsapp_document(phone, pdf_path, f"Curriculo_{resume_data.get('nome_completo')}.pdf", "Seu currículo novinho em folha!")
+    send_whatsapp_document(phone, pdf_path, f"Curriculo_{resume_data.get('nome_completo', 'user').split(' ')[0]}.pdf", "Seu currículo novinho em folha!")
     os.remove(pdf_path)
+
+    # 2. Gerar e enviar arquivos do plano Premium/Revisão Humana
     if plan in ['premium', 'revisao_humana']:
-        send_whatsapp_message(phone, "Gerando seus bônus premium...")
-        send_whatsapp_message(phone, "[Arquivo Simulado] Curriculo_em_Ingles.pdf")
-        send_whatsapp_message(phone, "[Arquivo Simulado] Carta_de_Apresentacao.pdf")
+        send_whatsapp_message(phone, "Gerando seus bônus do plano premium...")
+
+        # Gerar Currículo em Inglês
+        english_data = translate_resume_data_to_english(json.dumps(resume_data, ensure_ascii=False))
+        if english_data:
+            english_pdf_path = generate_resume_pdf(english_data, template)
+            send_whatsapp_document(phone, english_pdf_path, f"Resume_English_{english_data.get('nome_completo', 'user').split(' ')[0]}.pdf", "Aqui está sua versão em Inglês!")
+            os.remove(english_pdf_path)
+        
+        # Gerar Carta de Apresentação
+        cover_letter_text = generate_cover_letter_text(resume_data)
+        if cover_letter_text:
+            letter_path = os.path.join(TEMP_DIR, f"carta_apresentacao_{phone}.pdf")
+            generate_simple_text_pdf(cover_letter_text, letter_path)
+            send_whatsapp_document(phone, letter_path, "Carta_de_Apresentacao.pdf", "E aqui sua carta de apresentação!")
+            os.remove(letter_path)
+
+    # 3. Mensagem final para o plano de Revisão Humana
     if plan == 'revisao_humana':
-        send_whatsapp_message(phone, "Sua revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
+        send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato com o feedback. 👨‍💼")
+    
     send_whatsapp_message(phone, f"Prontinho! Muito obrigado por usar o {BOT_NAME}. Sucesso! 🚀")
     update_user(phone, {'state': 'completed'})
+
 
 @handle_state('completed')
 def handle_completed(user, message_data):
