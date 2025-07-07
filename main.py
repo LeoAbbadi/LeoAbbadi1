@@ -182,12 +182,11 @@ def analyze_pix_receipt(image_url):
         logging.error(f"Erro ao analisar comprovante PIX com OpenAI: {e}", exc_info=True)
         return {'verified': False, 'reason': 'Não consegui ler a imagem do comprovante.'}
 
-# --- NOVAS FUNÇÕES PARA O PLANO PREMIUM ---
-def translate_resume_data_to_english(resume_data_json):
-    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Mantenha a mesma estrutura JSON e os mesmos nomes de chaves (keys). Apenas traduza os valores (values)."
+def translate_resume_data_to_english(resume_data):
+    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Mantenha a mesma estrutura JSON, mas traduza tanto as chaves (keys) quanto os valores (values) para o inglês. Use chaves em inglês como: 'full_name', 'city_state', 'phone', 'email', 'desired_role', 'professional_summary', 'work_experience', 'education', 'skills', 'courses_certifications'."
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": resume_data_json}
+        {"role": "user", "content": json.dumps(resume_data, ensure_ascii=False)}
     ]
     translated_json_str = get_openai_response(messages, is_json=True)
     try:
@@ -197,72 +196,205 @@ def translate_resume_data_to_english(resume_data_json):
         return None
 
 def generate_cover_letter_text(resume_data):
-    system_prompt = "Você é um coach de carreira e redator profissional. Escreva uma carta de apresentação concisa, profissional e impactante com base nos dados do currículo a seguir. A carta deve ser em português."
-    user_prompt = f"Dados do currículo:\n{json.dumps(resume_data, indent=2, ensure_ascii=False)}\n\nPor favor, escreva a carta de apresentação."
+    system_prompt = "Você é um coach de carreira e especialista em RH. Escreva uma carta de apresentação profissional, na primeira pessoa (como se fosse o candidato), usando os dados do currículo a seguir. A carta deve ser concisa, direta e impactante. Comece com uma saudação profissional, apresente o candidato e seu objetivo. No corpo, destaque 1 ou 2 pontos fortes da experiência ou habilidades que se conectem com o cargo desejado. Encerre com uma chamada para ação, convidando para uma conversa e agradecendo a oportunidade. Não use clichês."
+    user_prompt = f"Dados do currículo para basear a carta:\n{json.dumps(resume_data, indent=2, ensure_ascii=False)}\n\nEscreva a carta de apresentação:"
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
     ]
     return get_openai_response(messages)
 
+def improve_experience_descriptions(experiences):
+    system_prompt = "Você é um especialista em RH que otimiza currículos. Reescreva a lista de experiências profissionais a seguir para que foquem em resultados e ações, usando verbos de impacto. Transforme responsabilidades em conquistas. Retorne uma lista JSON de strings."
+    user_prompt = f"Experiências originais: {json.dumps(experiences, ensure_ascii=False)}\n\nReescreva-as de forma profissional e focada em resultados:"
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    response_str = get_openai_response(messages, is_json=True)
+    try:
+        # A IA pode retornar um JSON com uma chave, então tentamos extrair a lista
+        response_data = json.loads(response_str)
+        if isinstance(response_data, dict):
+            # Procura por uma chave que contenha uma lista
+            for key in response_data:
+                if isinstance(response_data[key], list):
+                    return response_data[key]
+        elif isinstance(response_data, list):
+            return response_data
+        return experiences # Retorna original em caso de falha
+    except (json.JSONDecodeError, TypeError):
+        logging.error("Falha ao decodificar JSON da melhoria de experiências.")
+        return experiences
+
+
 # ==============================================================================
 # --- GERAÇÃO DE PDF
 # ==============================================================================
 def clean_text_for_pdf(text):
-    return text.encode('latin-1', 'replace').decode('latin-1')
+    return str(text).encode('latin-1', 'replace').decode('latin-1')
 
 def generate_simple_text_pdf(text, path):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", '', 12)
-    pdf.multi_cell(0, 10, clean_text_for_pdf(text))
+    pdf.set_font("Helvetica", '', 11)
+    pdf.multi_cell(0, 7, clean_text_for_pdf(text))
     pdf.output(path)
 
 def generate_resume_pdf(data, template_choice):
     templates = {
-        'classico': generate_template_classico, 'moderno': generate_template_moderno,
-        'criativo': generate_template_criativo, 'minimalista': generate_template_minimalista,
+        'classico': generate_template_classico,
+        'moderno': generate_template_moderno,
+        'criativo': generate_template_criativo,
+        'minimalista': generate_template_minimalista,
         'tecnico': generate_template_tecnico
     }
     pdf_function = templates.get(template_choice, generate_template_classico)
-    clean_data = {k: clean_text_for_pdf(str(v)) for k, v in data.items()}
+    
+    # Mapeamento de chaves para títulos amigáveis (agnóstico de idioma)
+    title_map = {
+        "nome_completo": "Nome Completo", "full_name": "Full Name",
+        "cidade_estado": "Cidade e Estado", "city_state": "City and State",
+        "telefone": "Telefone", "phone": "Phone",
+        "email": "Email", "email": "Email",
+        "cargo": "Cargo Desejado", "desired_role": "Desired Role",
+        "resumo": "Resumo Profissional", "professional_summary": "Professional Summary",
+        "experiencias": "Experiência Profissional", "work_experience": "Work Experience",
+        "formacao": "Formação Acadêmica", "education": "Education",
+        "habilidades": "Habilidades", "skills": "Skills",
+        "cursos": "Cursos e Certificações", "courses_certifications": "Courses & Certifications",
+    }
+    
     path = os.path.join(TEMP_DIR, f"curriculo_{data.get('phone', 'user')}.pdf")
-    pdf_function(clean_data, path)
+    pdf_function(data, path, title_map) # Passa o mapa de títulos para a função
     return path
 
-def generate_template_classico(data, path):
+# --- NOVOS TEMPLATES DE CURRÍCULO ---
+
+def generate_template_classico(data, path, title_map):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", 'B', 16)
-    pdf.cell(0, 10, data.get('nome_completo', ''), 0, 1, 'C')
-    pdf.set_font("Helvetica", '', 10)
-    contato = f"{data.get('cidade_estado', '')} | {data.get('telefone', '')} | {data.get('email', '')}"
-    pdf.cell(0, 10, contato, 0, 1, 'C')
-    pdf.ln(10)
-    def add_section(title, content):
-        # Aprimorado para não mostrar seções vazias ou com comandos
-        if content and str(content).strip() and str(content) != '[]' and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
-            pdf.set_font("Helvetica", 'B', 12)
-            pdf.cell(0, 10, title.upper(), 0, 1, 'L')
+    pdf.set_font("Times", 'B', 20)
+    pdf.cell(0, 10, clean_text_for_pdf(data.get('nome_completo') or data.get('full_name')), 0, 1, 'C')
+    pdf.set_font("Times", '', 11)
+    contato_pt = f"{data.get('cidade_estado', '')} | {data.get('telefone', '')} | {data.get('email', '')}"
+    contato_en = f"{data.get('city_state', '')} | {data.get('phone', '')} | {data.get('email', '')}"
+    pdf.cell(0, 8, clean_text_for_pdf(contato_pt if data.get('cidade_estado') else contato_en), 0, 1, 'C')
+    pdf.ln(8)
+    def add_section(key, content):
+        if content and str(content) != '[]' and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
+            pdf.set_font("Times", 'B', 12)
+            pdf.cell(0, 8, clean_text_for_pdf(title_map.get(key, key.replace("_", " ").title())), 0, 1, 'L')
             pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 190, pdf.get_y())
-            pdf.ln(2)
-            pdf.set_font("Helvetica", '', 10)
-            # Limpa a formatação de lista para o PDF
+            pdf.ln(3)
+            pdf.set_font("Times", '', 11)
             cleaned_content = str(content).replace("['", "- ").replace("']", "").replace("', '", "\n- ").replace("[]", "")
-            pdf.multi_cell(0, 5, cleaned_content)
-            pdf.ln(5)
-    add_section("Cargo Desejado", data.get('cargo'))
-    add_section("Resumo Profissional", data.get('resumo'))
-    add_section("Experiência Profissional", data.get('experiencias'))
-    add_section("Formação Acadêmica", data.get('formacao'))
-    add_section("Habilidades", data.get('habilidades'))
-    add_section("Cursos e Certificações", data.get('cursos'))
+            pdf.multi_cell(0, 6, clean_text_for_pdf(cleaned_content))
+            pdf.ln(4)
+    for key, value in data.items():
+        if key not in ['nome_completo', 'full_name', 'cidade_estado', 'city_state', 'telefone', 'phone', 'email']:
+            add_section(key, value)
     pdf.output(path)
 
-def generate_template_moderno(data, path): generate_template_classico(data, path)
-def generate_template_criativo(data, path): generate_template_classico(data, path)
-def generate_template_minimalista(data, path): generate_template_classico(data, path)
-def generate_template_tecnico(data, path): generate_template_classico(data, path)
+def generate_template_moderno(data, path, title_map):
+    pdf = FPDF()
+    pdf.add_page()
+    HEADER_COLOR = (24, 87, 114) # Azul escuro
+    # Cabeçalho
+    pdf.set_fill_color(*HEADER_COLOR)
+    pdf.rect(0, 0, 210, 35, 'F')
+    pdf.set_y(10)
+    pdf.set_font("Helvetica", 'B', 22)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 10, clean_text_for_pdf(data.get('nome_completo') or data.get('full_name')), 0, 1, 'C')
+    pdf.set_font("Helvetica", '', 11)
+    contato_pt = f"{data.get('email', '')} | {data.get('telefone', '')} | {data.get('cidade_estado', '')}"
+    contato_en = f"{data.get('email', '')} | {data.get('phone', '')} | {data.get('city_state', '')}"
+    pdf.cell(0, 8, clean_text_for_pdf(contato_pt if data.get('cidade_estado') else contato_en), 0, 1, 'C')
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_y(45)
+    # Layout de 2 colunas
+    sidebar_width = 60
+    main_content_width = 190 - sidebar_width - 10
+    # Coluna Esquerda (Sidebar)
+    pdf.set_font("Helvetica", 'B', 12)
+    pdf.cell(sidebar_width, 8, "Skills", 0, 1)
+    pdf.set_font("Helvetica", '', 10)
+    pdf.multi_cell(sidebar_width, 6, clean_text_for_pdf(data.get('habilidades') or data.get('skills')))
+    pdf.ln(5)
+    pdf.cell(sidebar_width, 8, "Education", 0, 1)
+    pdf.set_font("Helvetica", '', 10)
+    pdf.multi_cell(sidebar_width, 6, clean_text_for_pdf(data.get('formacao') or data.get('education')))
+    # Coluna Direita (Principal)
+    pdf.set_xy(sidebar_width + 10, 45)
+    def add_right_section(key, content):
+        if content and str(content) != '[]' and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
+            pdf.set_x(sidebar_width + 10)
+            pdf.set_font("Helvetica", 'B', 14)
+            pdf.cell(main_content_width, 8, clean_text_for_pdf(title_map.get(key, key.replace("_", " ").title())), 0, 1, 'L')
+            pdf.set_x(sidebar_width + 10)
+            pdf.set_font("Helvetica", '', 10)
+            cleaned_content = str(content).replace("['", "- ").replace("']", "").replace("', '", "\n- ").replace("[]", "")
+            pdf.multi_cell(main_content_width, 6, clean_text_for_pdf(cleaned_content))
+            pdf.ln(5)
+    add_right_section('desired_role' if 'desired_role' in data else 'cargo', data.get('desired_role') or data.get('cargo'))
+    add_right_section('professional_summary' if 'professional_summary' in data else 'resumo', data.get('professional_summary') or data.get('resumo'))
+    add_right_section('work_experience' if 'work_experience' in data else 'experiencias', data.get('work_experience') or data.get('experiencias'))
+    pdf.output(path)
+
+def generate_template_criativo(data, path, title_map):
+    pdf = FPDF()
+    pdf.add_page()
+    TITLE_COLOR = (219, 68, 55) # Vermelho Google
+    pdf.set_font("Helvetica", 'B', 24)
+    pdf.cell(0, 15, clean_text_for_pdf(data.get('nome_completo') or data.get('full_name')), 0, 1, 'L')
+    pdf.set_font("Helvetica", '', 11)
+    pdf.cell(0, 8, clean_text_for_pdf(data.get('cargo') or data.get('desired_role')), 0, 1, 'L')
+    pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 190, pdf.get_y())
+    pdf.ln(10)
+    def add_section(key, content):
+        if content and str(content) != '[]' and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
+            pdf.set_font("Helvetica", 'B', 12)
+            pdf.set_text_color(*TITLE_COLOR)
+            pdf.cell(0, 8, clean_text_for_pdf(title_map.get(key, key.replace("_", " ").title())), 0, 1, 'L')
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Helvetica", '', 10)
+            cleaned_content = str(content).replace("['", "- ").replace("']", "").replace("', '", "\n- ").replace("[]", "")
+            pdf.multi_cell(0, 6, clean_text_for_pdf(cleaned_content))
+            pdf.ln(4)
+    for key, value in data.items():
+        if key not in ['nome_completo', 'full_name', 'cargo', 'desired_role']:
+            add_section(key, value)
+    pdf.output(path)
+
+def generate_template_minimalista(data, path, title_map):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_font("Helvetica", 'B', 28)
+    pdf.cell(0, 15, clean_text_for_pdf(data.get('nome_completo') or data.get('full_name')), 0, 1, 'L')
+    pdf.set_font("Helvetica", '', 12)
+    contato_pt = f"{data.get('email', '')} | {data.get('telefone', '')} | {data.get('cidade_estado', '')}"
+    contato_en = f"{data.get('email', '')} | {data.get('phone', '')} | {data.get('city_state', '')}"
+    pdf.cell(0, 10, clean_text_for_pdf(contato_pt if data.get('cidade_estado') else contato_en), 0, 1, 'L')
+    pdf.ln(15)
+    def add_section(key, content):
+        if content and str(content) != '[]' and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
+            pdf.set_font("Helvetica", '', 9)
+            pdf.set_text_color(128, 128, 128)
+            pdf.cell(0, 8, clean_text_for_pdf(title_map.get(key, key.replace("_", " ").title()).upper()), 0, 1, 'L')
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Helvetica", '', 11)
+            cleaned_content = str(content).replace("['", "- ").replace("']", "").replace("', '", "\n- ").replace("[]", "")
+            pdf.multi_cell(0, 7, clean_text_for_pdf(cleaned_content))
+            pdf.ln(8)
+    for key, value in data.items():
+        if key not in ['nome_completo', 'full_name', 'email', 'telefone', 'phone', 'cidade_estado', 'city_state']:
+            add_section(key, value)
+    pdf.output(path)
+
+def generate_template_tecnico(data, path, title_map):
+    generate_template_classico(data, path, title_map) # Usa o clássico como base para o técnico por enquanto
 
 # ==============================================================================
 # --- FLUXO DA CONVERSA (STATE MACHINE)
@@ -309,10 +441,14 @@ def show_payment_options(phone):
 @handle_state('awaiting_plan_choice')
 def handle_plan_choice(user, message_data):
     phone = user['phone']
-    choice = message_data.get('text', '').lower().strip().replace('á', 'a')
-    plans = {'basico': 'basico', 'premium': 'premium', 'revisao': 'revisao_humana', 'revisão': 'revisao_humana'}
-    if choice in plans:
-        plan_name = plans[choice]
+    choice = message_data.get('text', '').lower().strip()
+    # Mapeamento mais flexível de palavras-chave
+    if 'básico' in choice or 'basico' in choice: plan_name = 'basico'
+    elif 'premium' in choice: plan_name = 'premium'
+    elif 'revisão' in choice or 'revisao' in choice or 'humana' in choice: plan_name = 'revisao_humana'
+    else: plan_name = None
+
+    if plan_name:
         update_user(phone, {'plan': plan_name})
         template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo. Qual destes 5 estilos você prefere?\n\n1. *Clássico*\n2. *Moderno*\n3. *Criativo*\n4. *Minimalista*\n5. *Técnico*\n\nÉ só me dizer o número ou o nome."
         send_whatsapp_message(phone, template_message)
@@ -449,10 +585,10 @@ def deliver_final_product(user):
         send_whatsapp_message(phone, "Gerando seus bônus do plano premium...")
 
         # Gerar Currículo em Inglês
-        english_data = translate_resume_data_to_english(json.dumps(resume_data, ensure_ascii=False))
+        english_data = translate_resume_data_to_english(resume_data)
         if english_data:
             english_pdf_path = generate_resume_pdf(english_data, template)
-            send_whatsapp_document(phone, english_pdf_path, f"Resume_English_{english_data.get('nome_completo', 'user').split(' ')[0]}.pdf", "Aqui está sua versão em Inglês!")
+            send_whatsapp_document(phone, english_pdf_path, f"Resume_English_{english_data.get('full_name', 'user').split(' ')[0]}.pdf", "Aqui está sua versão em Inglês!")
             os.remove(english_pdf_path)
         
         # Gerar Carta de Apresentação
@@ -460,7 +596,7 @@ def deliver_final_product(user):
         if cover_letter_text:
             letter_path = os.path.join(TEMP_DIR, f"carta_apresentacao_{phone}.pdf")
             generate_simple_text_pdf(cover_letter_text, letter_path)
-            send_whatsapp_document(phone, letter_path, "Carta_de_Apresentacao.pdf", "E aqui sua carta de apresentação!")
+            send_whatsapp_document(phone, letter_path, "Carta_de_Apresentacao.pdf", "E aqui sua carta de apresentação personalizada!")
             os.remove(letter_path)
 
     # 3. Mensagem final para o plano de Revisão Humana
