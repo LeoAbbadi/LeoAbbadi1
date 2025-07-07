@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# VERSÃO FINAL - USA APENAS OPENAI PARA TUDO
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -14,7 +15,7 @@ import requests
 from flask import Flask, request, jsonify
 from fpdf import FPDF
 from pypix import Pix
-import google.generativeai as genai
+import openai # Apenas a OpenAI é necessária agora
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Configuração do logging para ver o que o bot está fazendo
@@ -30,16 +31,16 @@ BOT_NAME = "Cadu"
 ZAPI_INSTANCE_ID = os.environ.get('ZAPI_INSTANCE_ID')
 ZAPI_TOKEN = os.environ.get('ZAPI_TOKEN')
 ZAPI_CLIENT_TOKEN = os.environ.get('ZAPI_CLIENT_TOKEN')
-GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
-# Configuração da IA da Google (Gemini)
+# Configuração da IA da OpenAI (GPT) - PARA TEXTO E IMAGENS
 try:
-    genai.configure(api_key=GOOGLE_API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-    logging.info("API do Google Gemini configurada com sucesso.")
+    openai.api_key = OPENAI_API_KEY
+    if not OPENAI_API_KEY or not OPENAI_API_KEY.startswith("sk-"):
+        raise ValueError("Chave da OpenAI inválida ou não configurada.")
+    logging.info("API da OpenAI configurada com sucesso.")
 except Exception as e:
-    logging.error(f"Falha ao configurar a API do Google: {e}")
-    gemini_model = None
+    logging.error(f"Falha ao configurar a API da OpenAI: {e}")
 
 # --- CONFIGURAÇÕES DE PAGAMENTO ---
 PIX_RECIPIENT_NAME = "Leonardo Maciel Abbadi"
@@ -141,33 +142,44 @@ def send_whatsapp_document(phone, doc_path, filename, caption=""):
         logging.error(f"Erro ao enviar documento para {phone}: {e}")
 
 # ==============================================================================
-# --- FUNÇÕES DE INTELIGÊNCIA ARTIFICIAL (GEMINI)
+# --- FUNÇÕES DE INTELIGÊNCIA ARTIFICIAL (100% OPENAI)
 # ==============================================================================
-def get_ia_response(prompt):
-    if not gemini_model: return "Desculpe, minha IA está temporariamente indisponível."
+def get_openai_response(prompt_messages, is_json=False):
+    if not openai.api_key: return "Desculpe, minha IA (OpenAI) não está configurada."
     try:
-        response = gemini_model.generate_content(prompt)
-        return response.text.strip()
+        model_to_use = "gpt-4o"
+        response_format = {"type": "json_object"} if is_json else {"type": "text"}
+        completion = openai.chat.completions.create(
+            model=model_to_use,
+            messages=prompt_messages,
+            temperature=0.7,
+            response_format=response_format
+        )
+        return completion.choices[0].message.content.strip()
     except Exception as e:
-        logging.error(f"Erro na API do Gemini: {e}")
+        logging.error(f"Erro na API da OpenAI: {e}")
         return "Tive um problema para processar sua resposta. Vamos tentar de novo."
 
 def extract_info_from_message(question, user_message):
-    prompt = f'Analise a conversa.\nPergunta: "{question}"\nResposta: "{user_message}"\n\nExtraia APENAS a informação principal da resposta, sem frases extras. Exemplo: se a pergunta é "Qual seu nome?" e a resposta é "meu nome é joão", extraia "joão".'
-    return get_ia_response(prompt)
+    system_prompt = "Você é um assistente que extrai informações de uma conversa. Extraia APENAS a informação principal da resposta do usuário, sem a fraseologia extra. Por exemplo, se a pergunta é 'Qual seu nome completo?' e a resposta é 'o meu nome completo é joão da silva', extraia apenas 'joão da silva'. Se a resposta for 'não quero informar', extraia 'Não informado'."
+    user_prompt = f'Pergunta feita: "{question}"\nResposta do usuário: "{user_message}"\n\nInformação extraída:'
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    return get_openai_response(messages)
 
 def analyze_pix_receipt(image_url):
-    if not gemini_model: return {'verified': False, 'reason': 'IA de visão indisponível.'}
+    system_prompt = f'Analise a imagem de um comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}" e a instituição é "Mercado Pago" ou "MercadoPago". Responda APENAS com um objeto JSON com as chaves "verified" (true/false) e "reason" (uma breve explicação em português). Não inclua a formatação markdown ```json``` na resposta.'
+    messages = [{"role": "user", "content": [
+        {"type": "text", "text": system_prompt},
+        {"type": "image_url", "image_url": {"url": image_url}}
+    ]}]
     try:
-        image_response = requests.get(image_url, timeout=15)
-        image_response.raise_for_status()
-        image_data = image_response.content
-        prompt = f'Analise a imagem deste comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}" e a instituição é "Mercado Pago" ou "MercadoPago". Responda APENAS com JSON: {{"verified": true/false, "reason": "explicação breve em português"}}.'
-        response = gemini_model.generate_content([prompt, {'mime_type': 'image/jpeg', 'data': image_data}])
-        cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
-        return json.loads(cleaned_response)
+        json_response_str = get_openai_response(messages, is_json=True)
+        return json.loads(json_response_str)
     except Exception as e:
-        logging.error(f"Erro ao analisar comprovante PIX: {e}", exc_info=True)
+        logging.error(f"Erro ao analisar comprovante PIX com OpenAI: {e}", exc_info=True)
         return {'verified': False, 'reason': 'Não consegui ler a imagem do comprovante.'}
 
 # ==============================================================================
@@ -299,10 +311,17 @@ def create_flow_handler(current_step_index):
         phone, message = user['phone'], message_data.get('text', '')
         resume_data = json.loads(user['resume_data'])
         is_list_field = current_key in ['experiencias', 'cursos']
-        if is_list_field and message.lower().strip() in ['pronto', 'ok', 'finalizar']:
+        
+        simple_command = message.lower().strip()
+        if is_list_field and simple_command in ['pronto', 'ok', 'finalizar']:
             go_to_next_step(phone, resume_data, current_step_index)
             return
-        extracted_info = extract_info_from_message(current_question, message)
+        
+        if current_key == 'resumo' and simple_command == 'pular':
+            extracted_info = "Não informado"
+        else:
+            extracted_info = extract_info_from_message(current_question, message)
+
         if is_list_field:
             if current_key not in resume_data: resume_data[current_key] = []
             resume_data[current_key].append(extracted_info)
@@ -419,10 +438,9 @@ def webhook():
         phone = data.get('phone')
         message_data = {}
 
-        # Lógica robusta para extrair texto ou imagem
-        if data.get('text') and data['text'].get('message'):
+        if data.get('text') and data.get('text', {}).get('message'):
             message_data['text'] = data['text']['message']
-        elif data.get('image') and data['image'].get('imageUrl'):
+        elif data.get('image') and data.get('image', {}).get('imageUrl'):
             message_data['image'] = {'url': data['image']['imageUrl']}
         
         if phone and message_data:
