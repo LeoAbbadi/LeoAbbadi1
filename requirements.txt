@@ -5,3 +5,4 @@ pypix
 python-dotenv
 APScheduler
 openai
+gunicorn
