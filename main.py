@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO COM TEMPLATE DE PDF AVANÇADO E PROFISSIONAL (SEM FOTO)
+# VERSÃO FINAL - USA APENAS OPENAI PARA TUDO E CORRIGE CAMINHO DAS FONTES
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -49,34 +49,17 @@ PRECO_PREMIUM = 10.99
 PRECO_REVISAO_HUMANA = 15.99
 
 # --- CAMINHOS DE ARQUIVOS ---
-DATA_DIR = os.environ.get('RENDER_DISK_PATH', '.')
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get('RENDER_DISK_PATH', SCRIPT_DIR)
 DATABASE_FILE = os.path.join(DATA_DIR, 'cadu_database.db')
+
+# --- CORREÇÃO DO CAMINHO DAS FONTES ---
+# Procura as fontes na mesma pasta do script, já que não estão na subpasta 'fonts'
+FONT_DIR = SCRIPT_DIR
+
 TEMP_DIR = "/tmp"
 if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
-
-# --- FONTES PARA PDF ---
-FONT_DIR = os.path.join(DATA_DIR, 'fonts')
-if not os.path.exists(FONT_DIR):
-    os.makedirs(FONT_DIR)
-
-def download_font(url, dest_path):
-    if not os.path.exists(dest_path):
-        logging.info(f"Baixando fonte de {url}...")
-        try:
-            r = requests.get(url, allow_redirects=True)
-            r.raise_for_status()
-            with open(dest_path, 'wb') as f:
-                f.write(r.content)
-            logging.info(f"Fonte salva em {dest_path}")
-        except Exception as e:
-            logging.error(f"Falha ao baixar fonte: {e}")
-
-def setup_fonts():
-    dejavu_sans_url = "https://github.com/dejavufonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
-    dejavu_sans_bold_url = "https://github.com/dejavufonts/dejavu-fonts/raw/master/ttf/DejaVuSans-Bold.ttf"
-    download_font(dejavu_sans_url, os.path.join(FONT_DIR, "DejaVuSans.ttf"))
-    download_font(dejavu_sans_bold_url, os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf"))
 
 # ==============================================================================
 # --- BANCO DE DADOS
@@ -254,41 +237,18 @@ def generate_template_moderno(data, path):
         pdf.add_font('DejaVu', '', os.path.join(FONT_DIR, 'DejaVuSans.ttf'), uni=True)
         pdf.add_font('DejaVu', 'B', os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf'), uni=True)
         FONT_REGULAR, FONT_BOLD = 'DejaVu', 'DejaVu'
-    except RuntimeError:
+    except RuntimeError as e:
+        logging.error(f"ERRO CRÍTICO DE FONTE: {e}. O PDF será gerado com fontes padrão.")
         FONT_REGULAR, FONT_BOLD = 'Helvetica', 'Helvetica'
     
     SIDEBAR_COLOR = (52, 58, 64)
     ACCENT_COLOR = (73, 126, 174)
     
-    # Coluna Esquerda (Sidebar)
     pdf.set_fill_color(*SIDEBAR_COLOR)
     pdf.rect(0, 0, 70, 297, 'F')
     pdf.set_text_color(255, 255, 255)
-    pdf.set_xy(10, 20)
+    pdf.set_xy(10, 25)
     
-    # Contato
-    pdf.set_font(FONT_BOLD, 'B', 12)
-    pdf.cell(0, 10, "CONTATO" if 'cidade_estado' in data else 'CONTACT', 0, 1)
-    pdf.set_font(FONT_REGULAR, '', 9)
-    
-    def add_contact_info(icon_url, text):
-        if text:
-            y_before = pdf.get_y()
-            try:
-                # O fpdf2 pode carregar imagens de URLs diretamente
-                pdf.image(icon_url, x=10, y=y_before + 1, w=4, h=4)
-            except Exception as e:
-                logging.warning(f"Não foi possível carregar o ícone: {e}")
-            pdf.set_xy(16, y_before)
-            pdf.multi_cell(50, 5, text, 0, 'L')
-            pdf.ln(2)
-
-    add_contact_info("https://i.imgur.com/3O5MUNR.png", data.get('email'))
-    add_contact_info("https://i.imgur.com/d2owq8a.png", data.get('telefone') or data.get('phone'))
-    add_contact_info("https://i.imgur.com/sU9yB6j.png", data.get('cidade_estado') or data.get('city_state'))
-    pdf.ln(8)
-    
-    # Função genérica para seções da sidebar
     def add_sidebar_section(title_pt, title_en, content_pt, content_en):
         title = title_en if content_en else title_pt
         content = content_en if content_en else content_pt
@@ -299,11 +259,13 @@ def generate_template_moderno(data, path):
             pdf.set_font(FONT_REGULAR, '', 9)
             pdf.multi_cell(55, 5, str(content).replace(",", "\n• "), 0, 'L')
             pdf.ln(8)
-            
+    
+    add_sidebar_section("Contato", "Contact", data.get('email'), data.get('email'))
+    add_sidebar_section("", "", data.get('telefone'), data.get('phone'))
+    add_sidebar_section("", "", data.get('cidade_estado'), data.get('city_state'))
     add_sidebar_section("Formação", "Education", data.get('formacao'), data.get('education'))
     add_sidebar_section("Habilidades", "Skills", data.get('habilidades'), data.get('skills'))
 
-    # Coluna da Direita
     pdf.set_xy(80, 15)
     pdf.set_text_color(0, 0, 0)
     
@@ -315,7 +277,9 @@ def generate_template_moderno(data, path):
     pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'L')
     pdf.ln(10)
     
-    def add_right_section(title, content):
+    def add_right_section(title_pt, title_en, content_pt, content_en):
+        title = title_en if content_en else title_pt
+        content = content_en if content_en else content_pt
         if content and str(content) != '[]' and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
             pdf.set_x(80)
             pdf.set_font(FONT_BOLD, 'B', 14)
@@ -329,10 +293,9 @@ def generate_template_moderno(data, path):
             pdf.multi_cell(120, 6, cleaned_content)
             pdf.ln(6)
 
-    # Mapeia títulos para garantir o idioma correto
-    add_right_section(data.get('resumo', 'Resumo Profissional'), data.get('resumo') or data.get('professional_summary'))
-    add_right_section(data.get('experiencias', 'Experiência Profissional'), data.get('experiencias') or data.get('work_experience'))
-    add_right_section(data.get('cursos', 'Cursos e Certificações'), data.get('cursos') or data.get('courses_certifications'))
+    add_right_section('Resumo Profissional', 'Professional Summary', data.get('resumo'), data.get('professional_summary'))
+    add_right_section('Experiência Profissional', 'Work Experience', data.get('experiencias'), data.get('work_experience'))
+    add_right_section('Cursos e Certificações', 'Courses & Certifications', data.get('cursos'), data.get('courses_certifications'))
     pdf.output(path)
 
 # ==============================================================================
@@ -386,7 +349,7 @@ def handle_plan_choice(user, message_data):
     else: plan_name = None
     if plan_name:
         update_user(phone, {'plan': plan_name})
-        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo:\n\n1. *Moderno (Recomendado)*\n2. *Clássico*\n3. *Criativo*\n4. *Minimalista*\n5. *Técnico*\n\nÉ só me dizer o número ou o nome."
+        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo. Qual destes 5 estilos você prefere?\n\n1. *Moderno (Recomendado)*\n2. *Clássico*\n3. *Criativo*\n4. *Minimalista*\n5. *Técnico*\n\nÉ só me dizer o número ou o nome."
         send_whatsapp_message(phone, template_message)
         update_user(phone, {'state': 'choosing_template'})
     else:
@@ -597,9 +560,9 @@ def check_abandoned_sessions():
 # ==============================================================================
 # --- INICIALIZAÇÃO DO SERVIDOR
 # ==============================================================================
-setup_fonts()
 init_database()
 if __name__ == '__main__':
+    setup_fonts() # Baixa as fontes se não existirem (apenas na execução local)
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(check_abandoned_sessions, 'interval', hours=6)
     scheduler.start()
