@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO FINAL - CORREÇÃO DO 'set_font' E TEMPLATES PROFISSIONAIS
+# VERSÃO FINAL - CORREÇÃO DA FUNÇÃO DE TESTE E TEMPLATES PROFISSIONAIS
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -156,7 +156,7 @@ def analyze_pix_receipt(image_url):
         return {'verified': False}
 
 def translate_resume_data_to_english(resume_data):
-    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Traduza tanto as chaves (keys) quanto os valores (values) para o inglês. Use estas chaves em inglês: 'full_name', 'city_state', 'phone', 'email', 'desired_role', 'professional_summary', 'work_experience', 'education', 'skills', 'courses_certifications'. O valor de 'work_experience' e 'courses_certifications' devem ser uma lista de strings."
+    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Traduza tanto as chaves (keys) quanto os valores (values) para o inglês. Use estas chaves em inglês: 'full_name', 'city_state', 'phone', 'email', 'desired_role', 'professional_summary', 'work_experience', 'education', 'skills', 'courses_certifications'."
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": json.dumps(resume_data, ensure_ascii=False)}]
     translated_json_str = get_openai_response(messages, is_json=True)
     try:
@@ -198,15 +198,11 @@ class PDF(FPDF):
             logging.error(f"ERRO DE FONTE: {e}. Usando Helvetica como fallback.")
             self.font_regular = 'Helvetica'
             self.font_bold = 'Helvetica'
-        self.set_font(self.font_regular, '', 10)
 
 def generate_resume_pdf(data, template_choice, path):
     templates = {
-        'moderno': generate_template_moderno,
-        # Adicionar outras funções de template aqui no futuro
-        'classico': generate_template_moderno,
-        'criativo': generate_template_moderno,
-        'minimalista': generate_template_moderno,
+        'classico': generate_template_moderno, 'moderno': generate_template_moderno,
+        'criativo': generate_template_moderno, 'minimalista': generate_template_moderno,
         'tecnico': generate_template_moderno
     }
     pdf_function = templates.get(template_choice, generate_template_moderno)
@@ -225,43 +221,42 @@ def generate_template_moderno(data, path):
     pdf.add_font_setup()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    SIDEBAR_COLOR, ACCENT_COLOR = (45, 52, 54), (46, 204, 113) # Cores mais sóbrias
     
-    # --- Coluna Esquerda ---
+    SIDEBAR_COLOR, ACCENT_COLOR = (45, 52, 54), (26, 188, 156)
+    
     pdf.set_fill_color(*SIDEBAR_COLOR)
     pdf.rect(0, 0, 70, 297, 'F')
-    pdf.set_xy(10, 20)
     pdf.set_text_color(255, 255, 255)
-
+    pdf.set_xy(10, 20)
+    pdf.set_font(pdf.font_bold, 'B', 12)
+    
     lang = 'en' if 'full_name' in data else 'pt'
     
-    # Seções da Sidebar
     def add_sidebar_section(title, content):
-        if not content or not str(content).strip(): return
-        pdf.set_x(10)
-        pdf.set_font(pdf.font_bold, 'B', 12)
-        pdf.cell(55, 10, title.upper(), 0, 1)
-        pdf.set_font(pdf.font_regular, '', 9)
-        if isinstance(content, list): content = "\n".join([f"• {item}" for item in content])
-        pdf.multi_cell(55, 5, content)
-        pdf.ln(5)
+        if content and str(content).strip() != '[]':
+            pdf.set_x(10)
+            pdf.set_font(pdf.font_bold, 'B', 11)
+            pdf.cell(55, 10, title.upper(), 0, 1)
+            pdf.set_font(pdf.font_regular, '', 9)
+            if isinstance(content, list): content = "\n".join([f"• {item}" for item in content])
+            pdf.multi_cell(55, 5, content)
+            pdf.ln(5)
 
     contact_info = f"{data.get('email', '')}\n{data.get('telefone') or data.get('phone')}\n{data.get('cidade_estado') or data.get('city_state')}"
     add_sidebar_section("Contato" if lang == 'pt' else "Contact", contact_info)
     add_sidebar_section("Formação" if lang == 'pt' else "Education", data.get('formacao') or data.get('education'))
     add_sidebar_section("Habilidades" if lang == 'pt' else "Skills", data.get('habilidades') or data.get('skills'))
 
-    # --- Coluna Direita ---
     pdf.set_xy(80, 15)
     pdf.set_text_color(40, 40, 40)
-    pdf.set_font(pdf.font_bold, 'B', 26)
+    pdf.set_font(pdf.font_bold, 'B', 28)
     pdf.multi_cell(120, 11, data.get('nome_completo') or data.get('full_name'))
     pdf.set_font(pdf.font_regular, '', 14)
     pdf.set_text_color(108, 122, 137)
     pdf.set_x(80)
     pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'L')
     pdf.ln(8)
-
+    
     def add_right_section(title, content):
         if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
             pdf.set_x(80)
@@ -275,26 +270,43 @@ def generate_template_moderno(data, path):
             pdf.set_text_color(80, 80, 80)
             if isinstance(content, list):
                 for item in content:
-                    pdf.set_x(80)
-                    pdf.multi_cell(120, 6, f"• {item}")
+                    pdf.set_x(85)
+                    pdf.multi_cell(115, 6, f"• {item}")
                     pdf.ln(1)
             else:
                 pdf.set_x(80)
                 pdf.multi_cell(120, 6, content)
             pdf.ln(4)
-
+            
     title_map_pt = {"resumo": "Resumo Profissional", "experiencias": "Experiência Profissional", "cursos": "Cursos e Certificações"}
     title_map_en = {"professional_summary": "Professional Summary", "work_experience": "Work Experience", "courses_certifications": "Courses & Certifications"}
     
-    add_right_section(title_map_en.get('professional_summary') if lang == 'en' else title_map_pt.get('resumo'), data.get('resumo') or data.get('professional_summary'))
-    add_right_section(title_map_en.get('work_experience') if lang == 'en' else title_map_pt.get('experiencias'), data.get('experiencias') or data.get('work_experience'))
-    add_right_section(title_map_en.get('courses_certifications') if lang == 'en' else title_map_pt.get('cursos'), data.get('cursos') or data.get('courses_certifications'))
+    add_right_section(title_map_pt.get('resumo') if lang == 'pt' else title_map_en.get('professional_summary'), data.get('resumo') or data.get('professional_summary'))
+    add_right_section(title_map_pt.get('experiencias') if lang == 'pt' else title_map_en.get('work_experience'), data.get('experiencias') or data.get('work_experience'))
+    add_right_section(title_map_pt.get('cursos') if lang == 'pt' else title_map_en.get('courses_certifications'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
 # ==============================================================================
 # --- FLUXO DA CONVERSA
 # ==============================================================================
-# (O fluxo da conversa e os handlers continuam os mesmos da versão anterior)
+def generate_fake_data():
+    return {
+        "nome_completo": "Victor de Andrade",
+        "cidade_estado": "Porto Alegre, RS",
+        "telefone": "+55 (51) 99876-5432",
+        "email": "victor.andrade.dev@example.com",
+        "cargo": "Desenvolvedor de Software Sênior",
+        "resumo": "Desenvolvedor de software com mais de 8 anos de experiência na criação de soluções web escaláveis e de alta performance. Especialista em Python e JavaScript, com profundo conhecimento em arquitetura de microsserviços e computação em nuvem (AWS). Buscando aplicar minhas habilidades para resolver problemas complexos e impulsionar a inovação tecnológica.",
+        "experiencias": [
+            "Liderou o desenvolvimento do back-end para um novo produto de e-commerce, processando mais de 1 milhão de transações no primeiro ano.",
+            "Otimizou consultas de banco de dados e implementou caching, resultando em uma redução de 60% no tempo de carregamento da página.",
+            "Mentorou 5 desenvolvedores júnior, melhorando a qualidade do código e a produtividade da equipe."
+        ],
+        "formacao": "Bacharel em Ciência da Computação - Universidade Federal do Rio Grande do Sul (UFRGS), 2016",
+        "habilidades": "Python, Django, Flask, JavaScript, React, Node.js, Docker, Kubernetes, AWS, PostgreSQL, MongoDB",
+        "cursos": ["Certificação AWS Certified Developer", "Especialização em Arquitetura de Microsserviços"]
+    }
+
 CONVERSATION_FLOW = [
     ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
     ('cidade_estado', 'Ótimo, {nome}! Agora me diga em qual cidade e estado você mora.'),
