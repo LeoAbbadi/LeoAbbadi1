@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO COM TEMPLATE DE PDF AVANÇADO
+# VERSÃO COM TEMPLATE DE PDF AVANÇADO E PROFISSIONAL (SEM FOTO)
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -54,6 +54,29 @@ DATABASE_FILE = os.path.join(DATA_DIR, 'cadu_database.db')
 TEMP_DIR = "/tmp"
 if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
+
+# --- FONTES PARA PDF ---
+FONT_DIR = os.path.join(DATA_DIR, 'fonts')
+if not os.path.exists(FONT_DIR):
+    os.makedirs(FONT_DIR)
+
+def download_font(url, dest_path):
+    if not os.path.exists(dest_path):
+        logging.info(f"Baixando fonte de {url}...")
+        try:
+            r = requests.get(url, allow_redirects=True)
+            r.raise_for_status()
+            with open(dest_path, 'wb') as f:
+                f.write(r.content)
+            logging.info(f"Fonte salva em {dest_path}")
+        except Exception as e:
+            logging.error(f"Falha ao baixar fonte: {e}")
+
+def setup_fonts():
+    dejavu_sans_url = "https://github.com/dejavufonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
+    dejavu_sans_bold_url = "https://github.com/dejavufonts/dejavu-fonts/raw/master/ttf/DejaVuSans-Bold.ttf"
+    download_font(dejavu_sans_url, os.path.join(FONT_DIR, "DejaVuSans.ttf"))
+    download_font(dejavu_sans_bold_url, os.path.join(FONT_DIR, "DejaVuSans-Bold.ttf"))
 
 # ==============================================================================
 # --- BANCO DE DADOS
@@ -158,7 +181,7 @@ def extract_info_from_message(question, user_message):
     return get_openai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}])
 
 def analyze_pix_receipt(image_url):
-    system_prompt = f'Analise a imagem de um comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}" e a instituição é "Mercado Pago" ou "MercadoPago". Responda APENAS com um objeto JSON com as chaves "verified" (true/false) e "reason" (explicação breve em português). Não inclua markdown ```json```.'
+    system_prompt = f'Analise a imagem de um comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}" e a instituição é "Mercado Pago" ou "MercadoPago". Responda APENAS com um objeto JSON com as chaves "verified" (true/false) e "reason" (uma breve explicação em português). Não inclua markdown ```json```.'
     messages = [{"role": "user", "content": [{"type": "text", "text": system_prompt}, {"type": "image_url", "image_url": {"url": image_url}}]}]
     try:
         json_response_str = get_openai_response(messages, is_json=True)
@@ -184,7 +207,8 @@ def generate_cover_letter_text(resume_data):
 def improve_experience_descriptions(experiences):
     system_prompt = "Você é um especialista em RH que otimiza currículos. Reescreva a lista de experiências profissionais a seguir para que foquem em resultados e ações, usando verbos de impacto. Transforme responsabilidades em conquistas. Retorne uma lista JSON de strings."
     user_prompt = f"Experiências originais: {json.dumps(experiences, ensure_ascii=False)}\n\nReescreva-as de forma profissional e focada em resultados (retorne apenas a lista em JSON):"
-    response_str = get_openai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}], is_json=True)
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+    response_str = get_openai_response(messages, is_json=True)
     try:
         response_data = json.loads(response_str)
         if isinstance(response_data, dict):
@@ -198,141 +222,121 @@ def improve_experience_descriptions(experiences):
 # ==============================================================================
 # --- GERAÇÃO DE PDF
 # ==============================================================================
-def clean_text_for_pdf(text):
-    return str(text).encode('latin-1', 'replace').decode('latin-1')
-
-def generate_simple_text_pdf(text, path):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Helvetica", '', 11)
-    pdf.multi_cell(0, 7, clean_text_for_pdf(text))
-    pdf.output(path)
-
-# --- FUNÇÃO PRINCIPAL DE GERAÇÃO DE PDF ---
 def generate_resume_pdf(data, template_choice):
     templates = {
-        'classico': generate_template_classico, 'moderno': generate_template_moderno,
-        'criativo': generate_template_criativo, 'minimalista': generate_template_minimalista,
-        'tecnico': generate_template_tecnico
+        'classico': generate_template_moderno, 'moderno': generate_template_moderno,
+        'criativo': generate_template_moderno, 'minimalista': generate_template_moderno,
+        'tecnico': generate_template_moderno
     }
-    pdf_function = templates.get(template_choice, generate_template_moderno) # Moderno como padrão
+    pdf_function = templates.get(template_choice, generate_template_moderno)
     path = os.path.join(TEMP_DIR, f"curriculo_{data.get('phone', 'user')}.pdf")
     pdf_function(data, path)
     return path
 
-# --- NOVOS TEMPLATES DE CURRÍCULO ---
+def generate_simple_text_pdf(text, path):
+    pdf = FPDF()
+    pdf.add_page()
+    try:
+        pdf.add_font('DejaVu', '', os.path.join(FONT_DIR, 'DejaVuSans.ttf'), uni=True)
+        pdf.set_font('DejaVu', '', 11)
+    except RuntimeError:
+        logging.warning("Fonte DejaVu não encontrada, usando Helvetica.")
+        pdf.set_font("Helvetica", '', 11)
+    pdf.multi_cell(0, 7, text)
+    pdf.output(path)
 
-# NOVO TEMPLATE MODERNO (BASEADO NA IMAGEM DE EXEMPLO)
 def generate_template_moderno(data, path):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Helvetica", size=10)
-
-    # Cores
-    SIDEBAR_COLOR = (52, 58, 64)  # Cinza escuro
-    HEADER_COLOR = (233, 236, 239) # Cinza claro
-    LINK_COLOR = (73, 126, 174) # Azul
     
-    # --- Coluna da Esquerda (Sidebar) ---
+    try:
+        pdf.add_font('DejaVu', '', os.path.join(FONT_DIR, 'DejaVuSans.ttf'), uni=True)
+        pdf.add_font('DejaVu', 'B', os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf'), uni=True)
+        FONT_REGULAR, FONT_BOLD = 'DejaVu', 'DejaVu'
+    except RuntimeError:
+        FONT_REGULAR, FONT_BOLD = 'Helvetica', 'Helvetica'
+    
+    SIDEBAR_COLOR = (52, 58, 64)
+    ACCENT_COLOR = (73, 126, 174)
+    
+    # Coluna Esquerda (Sidebar)
     pdf.set_fill_color(*SIDEBAR_COLOR)
-    pdf.rect(0, 0, 70, 297, 'F') # Largura de 70mm
+    pdf.rect(0, 0, 70, 297, 'F')
     pdf.set_text_color(255, 255, 255)
     pdf.set_xy(10, 20)
     
-    # Foto (placeholder)
-    pdf.set_fill_color(200, 200, 200)
-    pdf.rect(20, pdf.get_y(), 30, 30, 'F')
-    pdf.ln(35)
-    
     # Contato
-    pdf.set_x(10)
-    pdf.set_font("Helvetica", 'B', 12)
-    pdf.cell(0, 10, "CONTATO", 0, 1)
-    pdf.set_font("Helvetica", '', 10)
+    pdf.set_font(FONT_BOLD, 'B', 12)
+    pdf.cell(0, 10, "CONTATO" if 'cidade_estado' in data else 'CONTACT', 0, 1)
+    pdf.set_font(FONT_REGULAR, '', 9)
     
-    # Função para adicionar contato com ícone
     def add_contact_info(icon_url, text):
         if text:
-            icon_path = os.path.join(TEMP_DIR, os.path.basename(icon_url))
+            y_before = pdf.get_y()
             try:
-                # Baixa e salva o ícone temporariamente
-                res = requests.get(icon_url)
-                with open(icon_path, 'wb') as f:
-                    f.write(res.content)
-                # Adiciona o ícone
-                pdf.image(icon_path, x=10, y=pdf.get_y(), w=4, h=4)
-                os.remove(icon_path) # Limpa o arquivo
-            except:
-                logging.warning("Não foi possível baixar o ícone.")
-            
-            pdf.set_x(16)
-            pdf.multi_cell(50, 5, clean_text_for_pdf(text), 0, 'L')
+                # O fpdf2 pode carregar imagens de URLs diretamente
+                pdf.image(icon_url, x=10, y=y_before + 1, w=4, h=4)
+            except Exception as e:
+                logging.warning(f"Não foi possível carregar o ícone: {e}")
+            pdf.set_xy(16, y_before)
+            pdf.multi_cell(50, 5, text, 0, 'L')
             pdf.ln(2)
 
     add_contact_info("https://i.imgur.com/3O5MUNR.png", data.get('email'))
     add_contact_info("https://i.imgur.com/d2owq8a.png", data.get('telefone') or data.get('phone'))
     add_contact_info("https://i.imgur.com/sU9yB6j.png", data.get('cidade_estado') or data.get('city_state'))
-    pdf.ln(10)
-
-    # Educação
-    pdf.set_x(10)
-    pdf.set_font("Helvetica", 'B', 12)
-    pdf.cell(0, 10, "FORMAÇÃO", 0, 1)
-    pdf.set_font("Helvetica", '', 10)
-    pdf.multi_cell(55, 6, clean_text_for_pdf(data.get('formacao') or data.get('education')))
-    pdf.ln(10)
-
-    # Habilidades
-    pdf.set_x(10)
-    pdf.set_font("Helvetica", 'B', 12)
-    pdf.cell(0, 10, "HABILIDADES", 0, 1)
-    pdf.set_font("Helvetica", '', 10)
-    skills_text = str(data.get('habilidades') or data.get('skills')).replace(",", "\n-")
-    pdf.multi_cell(55, 6, f"- {clean_text_for_pdf(skills_text)}")
+    pdf.ln(8)
     
-    # --- Coluna da Direita (Conteúdo Principal) ---
-    pdf.set_xy(80, 10)
+    # Função genérica para seções da sidebar
+    def add_sidebar_section(title_pt, title_en, content_pt, content_en):
+        title = title_en if content_en else title_pt
+        content = content_en if content_en else content_pt
+        if content:
+            pdf.set_x(10)
+            pdf.set_font(FONT_BOLD, 'B', 12)
+            pdf.cell(0, 10, title.upper(), 0, 1)
+            pdf.set_font(FONT_REGULAR, '', 9)
+            pdf.multi_cell(55, 5, str(content).replace(",", "\n• "), 0, 'L')
+            pdf.ln(8)
+            
+    add_sidebar_section("Formação", "Education", data.get('formacao'), data.get('education'))
+    add_sidebar_section("Habilidades", "Skills", data.get('habilidades'), data.get('skills'))
+
+    # Coluna da Direita
+    pdf.set_xy(80, 15)
     pdf.set_text_color(0, 0, 0)
     
-    # Nome e Cargo
-    pdf.set_font("Helvetica", 'B', 28)
-    pdf.cell(0, 15, clean_text_for_pdf(data.get('nome_completo') or data.get('full_name')), 0, 1, 'L')
-    pdf.set_font("Helvetica", 'I', 14)
+    pdf.set_font(FONT_BOLD, 'B', 28)
+    pdf.multi_cell(120, 12, data.get('nome_completo') or data.get('full_name'))
+    pdf.set_font(FONT_REGULAR, '', 14)
     pdf.set_text_color(80, 80, 80)
-    pdf.cell(0, 8, clean_text_for_pdf(data.get('cargo') or data.get('desired_role')), 0, 1, 'L')
+    pdf.set_x(80)
+    pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'L')
     pdf.ln(10)
     
-    # Função para seções da direita
     def add_right_section(title, content):
         if content and str(content) != '[]' and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
             pdf.set_x(80)
-            pdf.set_font("Helvetica", 'B', 14)
+            pdf.set_font(FONT_BOLD, 'B', 14)
             pdf.set_text_color(0,0,0)
             pdf.cell(0, 8, title.upper(), 0, 1, 'L')
-            pdf.set_draw_color(*SIDEBAR_COLOR)
-            pdf.line(80, pdf.get_y(), 190, pdf.get_y())
+            pdf.set_draw_color(*ACCENT_COLOR)
+            pdf.line(80, pdf.get_y(), 130, pdf.get_y())
             pdf.ln(5)
-            pdf.set_font("Helvetica", '', 10)
-            cleaned_content = str(content).replace("['", "• ").replace("']", "").replace("', '", "\n• ").replace("[]", "")
-            pdf.multi_cell(120, 6, clean_text_for_pdf(cleaned_content))
+            pdf.set_font(FONT_REGULAR, '', 10)
+            cleaned_content = str(content).replace("['", "\n• ").replace("']", "").replace("', '", "\n• ").replace("[]", "")
+            pdf.multi_cell(120, 6, cleaned_content)
             pdf.ln(6)
-            
-    add_right_section("Resumo Profissional", data.get('resumo') or data.get('professional_summary'))
-    add_right_section("Experiência Profissional", data.get('experiencias') or data.get('work_experience'))
-    add_right_section("Cursos e Certificações", data.get('cursos') or data.get('courses_certifications'))
 
+    # Mapeia títulos para garantir o idioma correto
+    add_right_section(data.get('resumo', 'Resumo Profissional'), data.get('resumo') or data.get('professional_summary'))
+    add_right_section(data.get('experiencias', 'Experiência Profissional'), data.get('experiencias') or data.get('work_experience'))
+    add_right_section(data.get('cursos', 'Cursos e Certificações'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
-
-def generate_template_classico(data, path): generate_template_moderno(data, path)
-def generate_template_criativo(data, path): generate_template_moderno(data, path)
-def generate_template_minimalista(data, path): generate_template_moderno(data, path)
-def generate_template_tecnico(data, path): generate_template_moderno(data, path)
-
-
 # ==============================================================================
-# --- FLUXO DA CONVERSA (STATE MACHINE)
+# --- FLUXO DA CONVERSA
 # ==============================================================================
 CONVERSATION_FLOW = [
     ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
@@ -375,38 +379,31 @@ def show_payment_options(phone):
 
 @handle_state('awaiting_plan_choice')
 def handle_plan_choice(user, message_data):
-    phone = user['phone']
-    choice = message_data.get('text', '').lower().strip()
+    phone, choice = user['phone'], message_data.get('text', '').lower().strip()
     if 'básico' in choice or 'basico' in choice: plan_name = 'basico'
     elif 'premium' in choice: plan_name = 'premium'
     elif 'revisão' in choice or 'revisao' in choice or 'humana' in choice: plan_name = 'revisao_humana'
     else: plan_name = None
     if plan_name:
         update_user(phone, {'plan': plan_name})
-        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo. Qual destes 5 estilos você prefere?\n\n1. *Clássico*\n2. *Moderno*\n3. *Criativo*\n4. *Minimalista*\n5. *Técnico*\n\nÉ só me dizer o número ou o nome."
+        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo:\n\n1. *Moderno (Recomendado)*\n2. *Clássico*\n3. *Criativo*\n4. *Minimalista*\n5. *Técnico*\n\nÉ só me dizer o número ou o nome."
         send_whatsapp_message(phone, template_message)
         update_user(phone, {'state': 'choosing_template'})
     else:
-        send_whatsapp_message(phone, "Plano não reconhecido. Por favor, escolha entre *básico*, *premium* ou *revisão*.")
+        send_whatsapp_message(phone, "Plano não reconhecido. Escolha *básico*, *premium* ou *revisão*.")
 
 @handle_state('choosing_template')
 def handle_choosing_template(user, message_data):
-    phone = user['phone']
-    message = message_data.get('text', '').lower().strip()
-    template_map = {'1': 'classico', 'clássico': 'classico', 'classico': 'classico',
-                    '2': 'moderno', 'moderno': 'moderno',
-                    '3': 'criativo', 'criativo': 'criativo',
-                    '4': 'minimalista', 'minimalista': 'minimalista',
-                    '5': 'tecnico', 'técnico': 'tecnico', 'tecnico': 'tecnico'}
-    chosen_template = template_map.get(message)
-    if chosen_template:
+    phone, message = user['phone'], message_data.get('text', '').lower().strip()
+    template_map = {'1': 'moderno', 'moderno': 'moderno', '2': 'classico', 'clássico': 'classico', '3': 'criativo', '4': 'minimalista', '5': 'tecnico'}
+    chosen_template = template_map.get(message, message)
+    if chosen_template in template_map.values():
         update_user(phone, {'template': chosen_template, 'state': 'flow_nome_completo'})
         send_whatsapp_message(phone, f"Perfeito! Vamos criar seu currículo no estilo *{chosen_template.capitalize()}*.")
         send_whatsapp_message(phone, CONVERSATION_FLOW[0][1])
     else:
-        send_whatsapp_message(phone, "Não entendi sua escolha. Por favor, me diga o nome ou o número do template (1 a 5).")
+        send_whatsapp_message(phone, "Não entendi. Diga o nome ou o número do template.")
 
-# ... (O restante do código, incluindo o Webhook e a inicialização, continua o mesmo)
 def create_flow_handler(current_step_index):
     current_key, current_question = CONVERSATION_FLOW[current_step_index]
     @handle_state(f'flow_{current_key}')
@@ -418,10 +415,8 @@ def create_flow_handler(current_step_index):
         if is_list_field and simple_command in ['pronto', 'ok', 'finalizar']:
             go_to_next_step(phone, resume_data, current_step_index)
             return
-        if current_key == 'resumo' and simple_command == 'pular':
-            extracted_info = "Não informado"
-        else:
-            extracted_info = extract_info_from_message(current_question, message)
+        if current_key == 'resumo' and simple_command == 'pular': extracted_info = "Não informado"
+        else: extracted_info = extract_info_from_message(current_question, message)
         if is_list_field:
             if current_key not in resume_data: resume_data[current_key] = []
             resume_data[current_key].append(extracted_info)
@@ -431,12 +426,10 @@ def create_flow_handler(current_step_index):
             go_to_next_step(phone, resume_data, current_step_index)
         update_user(phone, {'resume_data': json.dumps(resume_data)})
     def go_to_next_step(phone, resume_data, current_idx):
-        # NOVA ETAPA: OFERECER MELHORIA DE IA PARA EXPERIÊNCIAS
         if CONVERSATION_FLOW[current_idx][0] == 'experiencias' and resume_data.get('experiencias'):
             update_user(phone, {'state': 'awaiting_improve_choice'})
-            send_whatsapp_message(phone, "Ótimo. Percebi que você adicionou suas experiências. Gostaria que eu usasse minha IA para reescrevê-las de uma forma mais profissional e focada em resultados, destacando suas conquistas? (Responda com *sim* ou *não*)")
+            send_whatsapp_message(phone, "Ótimo. Percebi que você adicionou suas experiências. Gostaria que eu usasse minha IA para reescrevê-las de uma forma mais profissional e focada em resultados? (Responda com *sim* ou *não*)")
             return
-
         if current_idx + 1 < len(CONVERSATION_FLOW):
             next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
             if '{nome}' in next_question:
@@ -451,20 +444,16 @@ for i in range(len(CONVERSATION_FLOW)): create_flow_handler(i)
 
 @handle_state('awaiting_improve_choice')
 def handle_improve_choice(user, message_data):
-    phone = user['phone']
-    choice = message_data.get('text', '').lower().strip()
+    phone, choice = user['phone'], message_data.get('text', '').lower().strip()
     resume_data = json.loads(user['resume_data'])
     if choice == 'sim':
         send_whatsapp_message(phone, "Excelente! Deixa comigo, estou otimizando seus textos... ✍️")
-        original_experiences = resume_data.get('experiencias', [])
-        improved_experiences = improve_experience_descriptions(original_experiences)
+        improved_experiences = improve_experience_descriptions(resume_data.get('experiencias', []))
         resume_data['experiencias'] = improved_experiences
         update_user(phone, {'resume_data': json.dumps(resume_data)})
         send_whatsapp_message(phone, "Prontinho! Textos melhorados.")
     else:
-        send_whatsapp_message(phone, "Sem problemas! Vamos continuar com os textos originais.")
-    
-    # Continua o fluxo de onde parou (depois de 'experiencias')
+        send_whatsapp_message(phone, "Sem problemas! Vamos continuar.")
     current_key_index = [k for k, q in CONVERSATION_FLOW].index('experiencias')
     next_key, next_question = CONVERSATION_FLOW[current_key_index + 1]
     send_whatsapp_message(phone, next_question)
@@ -480,15 +469,12 @@ def show_review_menu(phone, resume_data):
 
 @handle_state('awaiting_review_choice')
 def handle_review_choice(user, message_data):
-    phone = user['phone']
-    message = message_data.get('text', '').lower().strip()
+    phone, message = user['phone'], message_data.get('text', '').lower().strip()
     if message in ['finalizar', 'pagar', 'tudo certo', 'ok']:
-        plan = user['plan']
-        prices = {'basico': PRECO_BASICO, 'premium': PRECO_PREMIUM, 'revisao_humana': PRECO_REVISAO_HUMANA}
+        plan, prices = user['plan'], {'basico': PRECO_BASICO, 'premium': PRECO_PREMIUM, 'revisao_humana': PRECO_REVISAO_HUMANA}
         price = prices.get(plan, 0.0)
-        pix_code = PIX_PAYLOAD_STRING 
         send_whatsapp_message(phone, f"Ótimo! Para o plano *{plan.replace('_', ' ').capitalize()}* (R$ {price:.2f}), pague com o PIX abaixo:")
-        send_whatsapp_message(phone, pix_code)
+        send_whatsapp_message(phone, PIX_PAYLOAD_STRING)
         send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
         update_user(phone, {'state': 'awaiting_payment_proof'})
         return
@@ -497,10 +483,10 @@ def handle_review_choice(user, message_data):
         if 1 <= choice <= len(CONVERSATION_FLOW):
             key_to_edit, _ = CONVERSATION_FLOW[choice-1]
             update_user(phone, {'state': f'editing_{key_to_edit}'})
-            send_whatsapp_message(phone, f"Ok, vamos corrigir *{key_to_edit.replace('_', ' ')}*. Por favor, envie a informação correta.")
+            send_whatsapp_message(phone, f"Ok, vamos corrigir *{key_to_edit.replace('_', ' ')}*. Envie a informação correta.")
         else: raise ValueError()
     except (ValueError, IndexError):
-        send_whatsapp_message(phone, "Não entendi. Por favor, digite o *número* do item ou *'finalizar'*.")
+        send_whatsapp_message(phone, "Não entendi. Digite o *número* do item ou *'finalizar'*.")
 
 def create_editing_handler(edit_step_index):
     key_to_edit, _ = CONVERSATION_FLOW[edit_step_index]
@@ -523,7 +509,7 @@ def handle_payment_proof(user, message_data):
         send_whatsapp_message(phone, "Oba, recebi seu comprovante! 🕵️‍♂️ Analisando com a IA, só um segundo...")
         analysis = analyze_pix_receipt(image_url)
         if analysis.get('verified'):
-            send_whatsapp_message(phone, f"Pagamento confirmado! ✅\nMotivo: {analysis.get('reason')}")
+            send_whatsapp_message(phone, "Pagamento confirmado! ✅")
             send_whatsapp_message(phone, "Estou preparando seus arquivos...")
             update_user(phone, {'payment_verified': 1})
             deliver_final_product(get_user(phone))
@@ -535,22 +521,18 @@ def handle_payment_proof(user, message_data):
 def deliver_final_product(user):
     phone, plan, template = user['phone'], user['plan'], user['template']
     resume_data = json.loads(user['resume_data'])
-
     send_whatsapp_message(phone, "Preparando seu currículo principal...")
     pdf_path = generate_resume_pdf(resume_data, template)
     send_whatsapp_document(phone, pdf_path, f"Curriculo_{resume_data.get('nome_completo', 'user').split(' ')[0]}.pdf", "Seu currículo novinho em folha!")
     os.remove(pdf_path)
-
     if plan in ['premium', 'revisao_humana']:
         send_whatsapp_message(phone, "Agora, gerando seus bônus do plano premium...")
-
         send_whatsapp_message(phone, "Traduzindo seu currículo para o Inglês...")
         english_data = translate_resume_data_to_english(resume_data)
         if english_data:
             english_pdf_path = generate_resume_pdf(english_data, template)
             send_whatsapp_document(phone, english_pdf_path, f"Resume_English_{english_data.get('full_name', 'user').split(' ')[0]}.pdf", "Aqui está sua versão em Inglês!")
             os.remove(english_pdf_path)
-        
         send_whatsapp_message(phone, "Escrevendo sua carta de apresentação personalizada...")
         cover_letter_text = generate_cover_letter_text(resume_data)
         if cover_letter_text:
@@ -558,13 +540,10 @@ def deliver_final_product(user):
             generate_simple_text_pdf(cover_letter_text, letter_path)
             send_whatsapp_document(phone, letter_path, "Carta_de_Apresentacao.pdf", "E aqui sua carta de apresentação!")
             os.remove(letter_path)
-
     if plan == 'revisao_humana':
-        send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato com o feedback. 👨‍💼")
-    
+        send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
     send_whatsapp_message(phone, f"Prontinho! Muito obrigado por usar o {BOT_NAME}. Sucesso! 🚀")
     update_user(phone, {'state': 'completed'})
-
 
 @handle_state('completed')
 def handle_completed(user, message_data):
@@ -583,17 +562,14 @@ def webhook():
         logging.info(f"Webhook recebido: {json.dumps(data, indent=2)}")
         phone = data.get('phone')
         message_data = {}
-
         if data.get('text') and data.get('text', {}).get('message'):
             message_data['text'] = data['text']['message']
         elif data.get('image') and data.get('image', {}).get('imageUrl'):
             message_data['image'] = {'url': data['image']['imageUrl']}
-        
         if phone and message_data:
             process_message(phone, message_data)
         else:
             logging.warning(f"Webhook de {phone} recebido sem dados de mensagem válidos.")
-
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
         logging.error(f"Erro crítico no webhook: {e}", exc_info=True)
@@ -621,6 +597,7 @@ def check_abandoned_sessions():
 # ==============================================================================
 # --- INICIALIZAÇÃO DO SERVIDOR
 # ==============================================================================
+setup_fonts()
 init_database()
 if __name__ == '__main__':
     scheduler = BackgroundScheduler(daemon=True)
