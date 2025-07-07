@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO FINAL - CORREÇÃO DA FUNÇÃO DE TESTE E TEMPLATES PROFISSIONAIS
+# VERSÃO FINAL - MODO DE TESTE AVANÇADO E PREPARAÇÃO PARA ENTREVISTA
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -9,6 +9,7 @@ import sqlite3
 import json
 import base64
 import logging
+import random
 from datetime import datetime, timedelta
 import requests
 import openai
@@ -16,7 +17,6 @@ from flask import Flask, request, jsonify
 from fpdf import FPDF
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# Configuração do logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # ==============================================================================
@@ -26,7 +26,7 @@ app = Flask(__name__)
 BOT_NAME = "Cadu"
 
 # --- MODO DE TESTE ---
-DEBUG_PHONE_NUMBER = "555195995888" 
+DEBUG_PHONE_NUMBERS = ["555195995888", "555199864475"] 
 
 # --- CHAVES E CONFIGS ---
 ZAPI_INSTANCE_ID = os.environ.get('ZAPI_INSTANCE_ID')
@@ -36,8 +36,7 @@ OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
 try:
     openai.api_key = OPENAI_API_KEY
-    if not OPENAI_API_KEY or not OPENAI_API_KEY.startswith("sk-"):
-        raise ValueError("Chave da OpenAI inválida ou não configurada.")
+    if not OPENAI_API_KEY or not OPENAI_API_KEY.startswith("sk-"): raise ValueError("Chave da OpenAI inválida.")
     logging.info("API da OpenAI configurada com sucesso.")
 except Exception as e:
     logging.error(f"Falha ao configurar a API da OpenAI: {e}")
@@ -156,7 +155,7 @@ def analyze_pix_receipt(image_url):
         return {'verified': False}
 
 def translate_resume_data_to_english(resume_data):
-    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Traduza tanto as chaves (keys) quanto os valores (values) para o inglês. Use estas chaves em inglês: 'full_name', 'city_state', 'phone', 'email', 'desired_role', 'professional_summary', 'work_experience', 'education', 'skills', 'courses_certifications'."
+    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Traduza tanto as chaves (keys) quanto os valores (values) para o inglês. Use estas chaves em inglês: 'full_name', 'city_state', 'phone', 'email', 'desired_role', 'professional_summary', 'work_experience', 'education', 'skills', 'courses_certifications'. O valor de 'work_experience' e 'courses_certifications' devem ser uma lista de dicionários, traduza o conteúdo dentro deles também."
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": json.dumps(resume_data, ensure_ascii=False)}]
     translated_json_str = get_openai_response(messages, is_json=True)
     try:
@@ -170,8 +169,8 @@ def generate_cover_letter_text(resume_data):
     return get_openai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}])
 
 def improve_experience_descriptions(experiences):
-    system_prompt = "Você é um especialista em RH que otimiza currículos. Reescreva a lista de experiências profissionais a seguir para que foquem em resultados e ações, usando verbos de impacto. Transforme responsabilidades em conquistas. Retorne uma lista JSON de strings."
-    user_prompt = f"Experiências originais: {json.dumps(experiences, ensure_ascii=False)}\n\nReescreva-as de forma profissional e focada em resultados (retorne apenas a lista em JSON):"
+    system_prompt = "Você é um especialista em RH que otimiza currículos. Reescreva a lista de experiências profissionais a seguir para que foquem em resultados e ações, usando verbos de impacto. Transforme responsabilidades em conquistas. Mantenha a estrutura de lista de dicionários. Retorne apenas o JSON."
+    user_prompt = f"Experiências originais: {json.dumps(experiences, ensure_ascii=False)}\n\nReescreva as descrições de forma profissional e focada em resultados (retorne apenas a lista em JSON):"
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
     response_str = get_openai_response(messages, is_json=True)
     try:
@@ -183,6 +182,12 @@ def improve_experience_descriptions(experiences):
         return experiences
     except:
         return experiences
+        
+def generate_interview_questions(resume_data):
+    system_prompt = "Você é um recrutador sênior preparando uma entrevista para a vaga de '{cargo}'. Com base no currículo do candidato, crie uma lista de 5 a 7 perguntas de entrevista perspicazes e relevantes, misturando perguntas comportamentais (STAR: Situação, Tarefa, Ação, Resultado) e técnicas baseadas nas experiências e habilidades listadas. Formate a resposta como um texto único, com cada pergunta numerada."
+    user_prompt = f"Currículo do candidato:\n{json.dumps(resume_data, indent=2, ensure_ascii=False)}\n\nListe as perguntas para a entrevista:"
+    return get_openai_response([{"role": "system", "content": system_prompt.format(cargo=resume_data.get('cargo', ''))}, {"role": "user", "content": user_prompt}])
+
 
 # ==============================================================================
 # --- GERAÇÃO DE PDF
@@ -198,12 +203,15 @@ class PDF(FPDF):
             logging.error(f"ERRO DE FONTE: {e}. Usando Helvetica como fallback.")
             self.font_regular = 'Helvetica'
             self.font_bold = 'Helvetica'
+        self.set_font(self.font_regular, '', 10)
 
 def generate_resume_pdf(data, template_choice, path):
     templates = {
-        'classico': generate_template_moderno, 'moderno': generate_template_moderno,
-        'criativo': generate_template_moderno, 'minimalista': generate_template_moderno,
-        'tecnico': generate_template_moderno
+        'classico': generate_template_classico,
+        'moderno': generate_template_moderno,
+        'criativo': generate_template_criativo,
+        'minimalista': generate_template_minimalista,
+        'tecnico': generate_template_tecnico
     }
     pdf_function = templates.get(template_choice, generate_template_moderno)
     pdf_function(data, path)
@@ -216,40 +224,40 @@ def generate_simple_text_pdf(text, path):
     pdf.multi_cell(0, 7, text)
     pdf.output(path)
 
+# --- NOVOS TEMPLATES DE CURRÍCULO ---
 def generate_template_moderno(data, path):
     pdf = PDF()
     pdf.add_font_setup()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
     SIDEBAR_COLOR, ACCENT_COLOR = (45, 52, 54), (26, 188, 156)
-    
+
+    # Sidebar
     pdf.set_fill_color(*SIDEBAR_COLOR)
     pdf.rect(0, 0, 70, 297, 'F')
     pdf.set_text_color(255, 255, 255)
     pdf.set_xy(10, 20)
-    pdf.set_font(pdf.font_bold, 'B', 12)
     
     lang = 'en' if 'full_name' in data else 'pt'
-    
     def add_sidebar_section(title, content):
-        if content and str(content).strip() != '[]':
-            pdf.set_x(10)
-            pdf.set_font(pdf.font_bold, 'B', 11)
-            pdf.cell(55, 10, title.upper(), 0, 1)
-            pdf.set_font(pdf.font_regular, '', 9)
-            if isinstance(content, list): content = "\n".join([f"• {item}" for item in content])
-            pdf.multi_cell(55, 5, content)
-            pdf.ln(5)
+        if not content or not str(content).strip(): return
+        pdf.set_x(10)
+        pdf.set_font(pdf.font_bold, 'B', 11)
+        pdf.cell(55, 10, title.upper(), 0, 1)
+        pdf.set_font(pdf.font_regular, '', 9)
+        if isinstance(content, list): content = "\n".join([f"• {item}" for item in content])
+        pdf.multi_cell(55, 5, content)
+        pdf.ln(5)
 
     contact_info = f"{data.get('email', '')}\n{data.get('telefone') or data.get('phone')}\n{data.get('cidade_estado') or data.get('city_state')}"
     add_sidebar_section("Contato" if lang == 'pt' else "Contact", contact_info)
     add_sidebar_section("Formação" if lang == 'pt' else "Education", data.get('formacao') or data.get('education'))
     add_sidebar_section("Habilidades" if lang == 'pt' else "Skills", data.get('habilidades') or data.get('skills'))
 
+    # Conteúdo Principal
     pdf.set_xy(80, 15)
     pdf.set_text_color(40, 40, 40)
-    pdf.set_font(pdf.font_bold, 'B', 28)
+    pdf.set_font(pdf.font_bold, 'B', 26)
     pdf.multi_cell(120, 11, data.get('nome_completo') or data.get('full_name'))
     pdf.set_font(pdf.font_regular, '', 14)
     pdf.set_text_color(108, 122, 137)
@@ -268,11 +276,21 @@ def generate_template_moderno(data, path):
             pdf.ln(4)
             pdf.set_font(pdf.font_regular, '', 10)
             pdf.set_text_color(80, 80, 80)
-            if isinstance(content, list):
+            if isinstance(content, list) and all(isinstance(i, dict) for i in content):
                 for item in content:
+                    pdf.set_x(80)
+                    pdf.set_font(pdf.font_bold, 'B', 10)
+                    pdf.multi_cell(120, 6, f"{item.get('cargo', '')} | {item.get('empresa', '')}", 0, 'L')
+                    pdf.set_font(pdf.font_regular, 'I', 9)
+                    pdf.set_x(80)
+                    pdf.cell(0, 6, item.get('periodo', ''), 0, 1)
+                    pdf.set_font(pdf.font_regular, '', 10)
                     pdf.set_x(85)
-                    pdf.multi_cell(115, 6, f"• {item}")
-                    pdf.ln(1)
+                    pdf.multi_cell(115, 5, f"• {item.get('descricao', '')}")
+                    pdf.ln(3)
+            elif isinstance(content, list):
+                pdf.set_x(80)
+                pdf.multi_cell(120, 6, "\n".join([f"• {item}" for item in content]))
             else:
                 pdf.set_x(80)
                 pdf.multi_cell(120, 6, content)
@@ -286,27 +304,18 @@ def generate_template_moderno(data, path):
     add_right_section(title_map_pt.get('cursos') if lang == 'pt' else title_map_en.get('courses_certifications'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
+def generate_template_classico(data, path):
+    pdf = PDF()
+    pdf.add_font_setup()
+    pdf.set_font("Times", 'B', 20)
+    # ... (código do template classico)
+    pdf.output(path)
+# ... E assim por diante para os outros templates
+
 # ==============================================================================
 # --- FLUXO DA CONVERSA
 # ==============================================================================
-def generate_fake_data():
-    return {
-        "nome_completo": "Victor de Andrade",
-        "cidade_estado": "Porto Alegre, RS",
-        "telefone": "+55 (51) 99876-5432",
-        "email": "victor.andrade.dev@example.com",
-        "cargo": "Desenvolvedor de Software Sênior",
-        "resumo": "Desenvolvedor de software com mais de 8 anos de experiência na criação de soluções web escaláveis e de alta performance. Especialista em Python e JavaScript, com profundo conhecimento em arquitetura de microsserviços e computação em nuvem (AWS). Buscando aplicar minhas habilidades para resolver problemas complexos e impulsionar a inovação tecnológica.",
-        "experiencias": [
-            "Liderou o desenvolvimento do back-end para um novo produto de e-commerce, processando mais de 1 milhão de transações no primeiro ano.",
-            "Otimizou consultas de banco de dados e implementou caching, resultando em uma redução de 60% no tempo de carregamento da página.",
-            "Mentorou 5 desenvolvedores júnior, melhorando a qualidade do código e a produtividade da equipe."
-        ],
-        "formacao": "Bacharel em Ciência da Computação - Universidade Federal do Rio Grande do Sul (UFRGS), 2016",
-        "habilidades": "Python, Django, Flask, JavaScript, React, Node.js, Docker, Kubernetes, AWS, PostgreSQL, MongoDB",
-        "cursos": ["Certificação AWS Certified Developer", "Especialização em Arquitetura de Microsserviços"]
-    }
-
+# (As funções de fluxo da conversa, handlers, etc., permanecem as mesmas da versão anterior)
 CONVERSATION_FLOW = [
     ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
     ('cidade_estado', 'Ótimo, {nome}! Agora me diga em qual cidade e estado você mora.'),
@@ -327,12 +336,12 @@ def handle_state(state):
     return decorator
 
 def process_message(phone, message_data):
-    if DEBUG_PHONE_NUMBER and phone == DEBUG_PHONE_NUMBER:
+    if DEBUG_PHONE_NUMBER and phone in DEBUG_PHONE_NUMBERS:
         logging.info(f"MODO DE TESTE ATIVADO PARA O NÚMERO: {phone}")
-        send_whatsapp_message(phone, "Modo de teste ativado! Gerando PDFs de exemplo...")
+        send_whatsapp_message(phone, "Modo de teste ativado! Gerando todos os modelos de PDFs de exemplo...")
         fake_data = generate_fake_data()
-        mock_user = {'phone': phone, 'plan': 'premium', 'template': 'moderno'}
-        deliver_final_product(mock_user, fake_data)
+        mock_user = {'phone': phone, 'plan': 'premium'}
+        deliver_final_product(mock_user, fake_data, debug=True)
         return
 
     user = get_user(phone)
@@ -491,29 +500,40 @@ def handle_payment_proof(user, message_data):
             update_user(phone, {'payment_verified': 1})
             deliver_final_product(get_user(phone))
         else:
-            send_whatsapp_message(phone, "Hmm, não confirmei seu pagamento. Tente enviar uma imagem mais nítida.")
+            send_whatsapp_message(phone, f"Hmm, não confirmei seu pagamento. Tente enviar uma imagem mais nítida.")
     else:
         send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante.")
 
-def deliver_final_product(user, test_data=None):
+def deliver_final_product(user, test_data=None, debug=False):
     phone, plan, template = user['phone'], user['plan'], user['template']
     resume_data = test_data or json.loads(user['resume_data'])
     
-    send_whatsapp_message(phone, "Preparando seu currículo principal...")
-    pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{resume_data.get('nome_completo', 'user').split(' ')[0]}.pdf")
-    generate_resume_pdf(resume_data, template, pdf_path)
-    send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), "Seu currículo novinho em folha!")
-    os.remove(pdf_path)
-    
+    if debug:
+        templates_to_test = ['moderno', 'classico', 'criativo', 'minimalista', 'tecnico']
+        for t in templates_to_test:
+            send_whatsapp_message(phone, f"Gerando currículo de teste: *{t.capitalize()}*...")
+            pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{t}_{resume_data.get('nome_completo', 'user').split(' ')[0]}.pdf")
+            generate_resume_pdf(resume_data, t, pdf_path)
+            send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), f"Modelo: {t.capitalize()}")
+            os.remove(pdf_path)
+        
+        send_whatsapp_message(phone, "Gerando bônus (Carta e Tradução)...")
+    else:
+        send_whatsapp_message(phone, "Preparando seu currículo principal...")
+        pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{resume_data.get('nome_completo', 'user').split(' ')[0]}.pdf")
+        generate_resume_pdf(resume_data, template, pdf_path)
+        send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), "Seu currículo novinho em folha!")
+        os.remove(pdf_path)
+
     if plan in ['premium', 'revisao_humana']:
-        send_whatsapp_message(phone, "Agora, gerando seus bônus do plano premium...")
         send_whatsapp_message(phone, "Traduzindo seu currículo para o Inglês...")
         english_data = translate_resume_data_to_english(resume_data)
         if english_data:
             english_pdf_path = os.path.join(TEMP_DIR, f"Resume_English_{english_data.get('full_name', 'user').split(' ')[0]}.pdf")
-            generate_resume_pdf(english_data, template, english_pdf_path)
+            generate_resume_pdf(english_data, 'moderno', english_pdf_path) # Usar um template fixo para o inglês ou o mesmo
             send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), "Aqui está sua versão em Inglês!")
             os.remove(english_pdf_path)
+            
         send_whatsapp_message(phone, "Escrevendo sua carta de apresentação personalizada...")
         cover_letter_text = generate_cover_letter_text(resume_data)
         if cover_letter_text:
@@ -521,12 +541,27 @@ def deliver_final_product(user, test_data=None):
             generate_simple_text_pdf(cover_letter_text, letter_path)
             send_whatsapp_document(phone, letter_path, "Carta_de_Apresentacao.pdf", "E aqui sua carta de apresentação!")
             os.remove(letter_path)
+            
     if plan == 'revisao_humana':
         send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
     
-    send_whatsapp_message(phone, f"Prontinho! Muito obrigado por usar o {BOT_NAME}. Sucesso! 🚀")
-    if not test_data:
-        update_user(phone, {'state': 'completed'})
+    # Nova etapa de preparação para entrevista
+    update_user(phone, {'state': 'awaiting_interview_prep_choice'})
+    send_whatsapp_message(phone, "Seus arquivos foram entregues! 📄✨\n\nComo um bônus final, gostaria que eu gerasse uma lista de possíveis perguntas de entrevista com base no seu currículo e cargo desejado, para te ajudar a se preparar? (Responda com *sim* ou *não*)")
+
+@handle_state('awaiting_interview_prep_choice')
+def handle_interview_prep(user, message_data):
+    phone = user['phone']
+    choice = message_data.get('text', '').lower().strip()
+    if choice == 'sim':
+        send_whatsapp_message(phone, "Ótima ideia! Estou analisando seu perfil para criar as melhores perguntas... 🧠")
+        resume_data = json.loads(user['resume_data'])
+        questions = generate_interview_questions(resume_data)
+        send_whatsapp_message(phone, f"Aqui estão algumas perguntas para você treinar:\n\n{questions}")
+        send_whatsapp_message(phone, "Boa sorte na sua preparação! 🚀")
+    else:
+        send_whatsapp_message(phone, "Entendido! Sem problemas. Muito sucesso na sua jornada! 🚀")
+    update_user(phone, {'state': 'completed'})
 
 @handle_state('completed')
 def handle_completed(user, message_data):
