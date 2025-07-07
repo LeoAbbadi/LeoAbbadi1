@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO FINAL - USA APENAS OPENAI PARA TUDO E CORRIGE CAMINHO DAS FONTES
+# VERSÃO DEFINITIVA - CORRIGE CAMINHO DA PASTA 'fonts'
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -54,8 +54,8 @@ DATA_DIR = os.environ.get('RENDER_DISK_PATH', SCRIPT_DIR)
 DATABASE_FILE = os.path.join(DATA_DIR, 'cadu_database.db')
 
 # --- CORREÇÃO DO CAMINHO DAS FONTES ---
-# Procura as fontes na mesma pasta do script, já que não estão na subpasta 'fonts'
-FONT_DIR = SCRIPT_DIR
+# Aponta para a subpasta 'fonts' dentro do diretório do projeto
+FONT_DIR = os.path.join(SCRIPT_DIR, 'fonts')
 
 TEMP_DIR = "/tmp"
 if not os.path.exists(TEMP_DIR):
@@ -164,7 +164,7 @@ def extract_info_from_message(question, user_message):
     return get_openai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}])
 
 def analyze_pix_receipt(image_url):
-    system_prompt = f'Analise a imagem de um comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}" e a instituição é "Mercado Pago" ou "MercadoPago". Responda APENAS com um objeto JSON com as chaves "verified" (true/false) e "reason" (uma breve explicação em português). Não inclua markdown ```json```.'
+    system_prompt = f'Analise a imagem de um comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}" e a instituição é "Mercado Pago" ou "MercadoPago". Responda APENAS com um objeto JSON com as chaves "verified" (true/false). Não inclua a formatação markdown ```json```.'
     messages = [{"role": "user", "content": [{"type": "text", "text": system_prompt}, {"type": "image_url", "image_url": {"url": image_url}}]}]
     try:
         json_response_str = get_openai_response(messages, is_json=True)
@@ -252,14 +252,14 @@ def generate_template_moderno(data, path):
     def add_sidebar_section(title_pt, title_en, content_pt, content_en):
         title = title_en if content_en else title_pt
         content = content_en if content_en else content_pt
-        if content:
+        if content and str(content).strip() != '[]':
             pdf.set_x(10)
             pdf.set_font(FONT_BOLD, 'B', 12)
             pdf.cell(0, 10, title.upper(), 0, 1)
             pdf.set_font(FONT_REGULAR, '', 9)
             pdf.multi_cell(55, 5, str(content).replace(",", "\n• "), 0, 'L')
             pdf.ln(8)
-    
+            
     add_sidebar_section("Contato", "Contact", data.get('email'), data.get('email'))
     add_sidebar_section("", "", data.get('telefone'), data.get('phone'))
     add_sidebar_section("", "", data.get('cidade_estado'), data.get('city_state'))
@@ -292,7 +292,7 @@ def generate_template_moderno(data, path):
             cleaned_content = str(content).replace("['", "\n• ").replace("']", "").replace("', '", "\n• ").replace("[]", "")
             pdf.multi_cell(120, 6, cleaned_content)
             pdf.ln(6)
-
+            
     add_right_section('Resumo Profissional', 'Professional Summary', data.get('resumo'), data.get('professional_summary'))
     add_right_section('Experiência Profissional', 'Work Experience', data.get('experiencias'), data.get('work_experience'))
     add_right_section('Cursos e Certificações', 'Courses & Certifications', data.get('cursos'), data.get('courses_certifications'))
@@ -477,7 +477,7 @@ def handle_payment_proof(user, message_data):
             update_user(phone, {'payment_verified': 1})
             deliver_final_product(get_user(phone))
         else:
-            send_whatsapp_message(phone, f"Hmm, não confirmei seu pagamento. 😕\nMotivo: {analysis.get('reason')}\nTente enviar uma imagem mais nítida.")
+            send_whatsapp_message(phone, "Hmm, não confirmei seu pagamento. Tente enviar uma imagem mais nítida.")
     else:
         send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante.")
 
@@ -562,7 +562,6 @@ def check_abandoned_sessions():
 # ==============================================================================
 init_database()
 if __name__ == '__main__':
-    setup_fonts() # Baixa as fontes se não existirem (apenas na execução local)
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(check_abandoned_sessions, 'interval', hours=6)
     scheduler.start()
