@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO COMPLETA E FINAL - 100% FUNCIONAL
+# VERSÃO FINAL - 3 TEMPLATES ÚNICOS, FLUXO COMPLETO E MODO DE TESTE
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -53,7 +53,8 @@ DATABASE_FILE = os.path.join(DATA_DIR, 'cadu_database.db')
 FONT_DIR = os.path.join(SCRIPT_DIR, 'fonts')
 TEMP_DIR = "/tmp"
 if not os.path.exists(TEMP_DIR): os.makedirs(TEMP_DIR)
-    # ==============================================================================
+
+# ==============================================================================
 # --- BANCO DE DADOS
 # ==============================================================================
 def init_database():
@@ -186,7 +187,8 @@ def generate_interview_questions(resume_data):
     system_prompt = "Você é um recrutador sênior preparando uma entrevista para a vaga de '{cargo}'. Com base no currículo do candidato, crie uma lista de 5 a 7 perguntas de entrevista perspicazes e relevantes, misturando perguntas comportamentais (STAR: Situação, Tarefa, Ação, Resultado) e técnicas baseadas nas experiências e habilidades listadas. Formate a resposta como um texto único, com cada pergunta numerada."
     user_prompt = f"Currículo do candidato:\n{json.dumps(resume_data, indent=2, ensure_ascii=False)}\n\nListe as perguntas para a entrevista:"
     return get_openai_response([{"role": "system", "content": system_prompt.format(cargo=resume_data.get('cargo', ''))}, {"role": "user", "content": user_prompt}])
-    # ==============================================================================
+
+# ==============================================================================
 # --- GERAÇÃO DE PDF
 # ==============================================================================
 class PDF(FPDF):
@@ -221,7 +223,7 @@ def generate_simple_text_pdf(text, path):
     pdf.multi_cell(0, 7, text)
     pdf.output(path)
 
-# --- TEMPLATES DE CURRÍCULO ---
+# --- NOVOS TEMPLATES DE CURRÍCULO ---
 
 def generate_template_moderno(data, path):
     pdf = PDF()
@@ -255,8 +257,7 @@ def generate_template_moderno(data, path):
     pdf.set_xy(80, 15)
     pdf.set_text_color(40, 40, 40)
     pdf.set_font(pdf.font_bold, 'B', 26)
-    pdf.cell(120, 12, data.get('nome_completo') or data.get('full_name'))
-    pdf.ln(10)
+    pdf.multi_cell(120, 11, data.get('nome_completo') or data.get('full_name'))
     pdf.set_font(pdf.font_regular, '', 14)
     pdf.set_text_color(108, 122, 137)
     pdf.set_x(80)
@@ -309,8 +310,7 @@ def generate_template_classico(data, path):
     pdf.set_auto_page_break(auto=True, margin=15)
     
     lang = 'en' if 'full_name' in data else 'pt'
-
-    # Cabeçalho
+    
     pdf.set_font(pdf.font_bold, 'B', 24)
     pdf.cell(0, 12, data.get('nome_completo') or data.get('full_name'), 0, 1, 'C')
     pdf.set_font(pdf.font_regular, '', 11)
@@ -355,27 +355,18 @@ def generate_template_criativo(data, path):
     pdf.add_font_setup()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    HEADER_COLOR, ACCENT_COLOR = (22, 160, 133), (26, 188, 156)
+    HEADER_COLOR, ACCENT_COLOR = (211, 84, 0), (230, 126, 34) # Laranja
 
-    # Header
     pdf.set_fill_color(*HEADER_COLOR)
-    pdf.rect(0, 0, 210, 40, 'F')
-    pdf.set_y(15)
+    pdf.rect(0, 10, 210, 35, 'F')
+    pdf.set_y(18)
     pdf.set_font(pdf.font_bold, 'B', 24)
     pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 10, data.get('nome_completo') or data.get('full_name'), 0, 1, 'C')
     pdf.set_font(pdf.font_regular, '', 12)
     pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'C')
     
-    # Contato
-    pdf.set_y(45)
-    pdf.set_text_color(80, 80, 80)
-    pdf.set_font(pdf.font_regular, '', 9)
-    contato = f"{data.get('email', '')} | {data.get('telefone') or data.get('phone')} | {data.get('cidade_estado') or data.get('city_state')}"
-    pdf.cell(0, 8, contato, 0, 1, 'C')
-    pdf.ln(10)
-    
-    # Corpo
+    pdf.set_y(55)
     lang = 'en' if 'full_name' in data else 'pt'
     def add_section(title, content):
         if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
@@ -398,7 +389,7 @@ def generate_template_criativo(data, path):
             else:
                 pdf.multi_cell(0, 5, content)
             pdf.ln(5)
-
+            
     title_map_pt = {"resumo": "Sobre Mim", "experiencias": "Experiência", "formacao": "Educação", "habilidades": "Competências", "cursos": "Cursos"}
     title_map_en = {"professional_summary": "About Me", "work_experience": "Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses"}
     
@@ -412,12 +403,26 @@ def generate_template_criativo(data, path):
 # --- FLUXO DA CONVERSA
 # ==============================================================================
 def generate_fake_data():
-    first_names, last_names = ["Ana", "Carlos", "Beatriz", "Daniel", "Elisa"], ["Silva", "Souza", "Pereira", "Costa"]
-    jobs = ["Gerente de Projetos", "Analista de Marketing Digital", "Engenheiro de Software", "Designer Gráfico"]
-    companies = ["InovaTech", "Soluções Criativas", "Alpha Systems", "Nexus Digital"]
-    skills = ["Liderança, Metodologias Ágeis", "SEO, Google Ads, Marketing de Conteúdo", "Python, JavaScript, React, Docker, AWS", "Adobe Photoshop, Illustrator, UI/UX"]
+    first_names, last_names = ["Ana", "Carlos", "Beatriz", "Daniel", "Elisa", "Fernando", "Laura", "Rafael"], ["Silva", "Souza", "Pereira", "Costa", "Rodrigues", "Almeida", "Nunes", "Mendes"]
+    jobs = ["Gerente de Projetos", "Analista de Marketing Digital", "Engenheiro de Software", "Designer Gráfico", "Consultor Financeiro", "Arquiteto de Soluções", "Cientista de Dados"]
+    companies = ["InovaTech", "Soluções Criativas", "Alpha Systems", "Nexus Digital", "Valor & Cia", "FutureWorks", "DataPrime"]
+    skills = ["Liderança de equipes, Metodologias Ágeis, Orçamento", "SEO, Google Ads, Marketing de Conteúdo, Redes Sociais", "Python, JavaScript, React, Docker, AWS", "Adobe Photoshop, Illustrator, UI/UX", "Análise de Investimentos, Modelagem Financeira", "Arquitetura de Cloud, TOGAF", "Machine Learning, Pandas, TensorFlow"]
     name = f"{random.choice(first_names)} {random.choice(last_names)}"
-    return {"nome_completo": name, "cidade_estado": f"{random.choice(['São Paulo, SP', 'Rio de Janeiro, RJ'])}", "telefone": f"+55 (11) 9{random.randint(1000,9999)}-{random.randint(1000,9999)}", "email": f"{name.lower().replace(' ','.')}@example.com", "cargo": random.choice(jobs), "resumo": "Profissional dedicado e proativo com histórico de sucesso em ambientes dinâmicos. Buscando novos desafios para aplicar minhas habilidades.", "experiencias": [{"cargo": random.choice(jobs), "empresa": random.choice(companies), "periodo": "2021 - Presente", "descricao": "Liderou projetos estratégicos, resultando em um aumento de 20% na eficiência operacional."}, {"cargo": "Analista Sênior", "empresa": "DataCorp", "periodo": "2018 - 2021", "descricao": "Desenvolveu dashboards que forneceram insights para a diretoria."}], "formacao": f"Bacharel em {random.choice(['Administração', 'Ciência da Computação'])}", "habilidades": random.choice(skills), "cursos": ["Certificação em Gestão de Projetos (PMP)"]}
+    return {
+        "nome_completo": name,
+        "cidade_estado": f"{random.choice(['São Paulo, SP', 'Rio de Janeiro, RJ', 'Belo Horizonte, MG', 'Curitiba, PR'])}",
+        "telefone": f"+55 ({random.randint(11,55)}) 9{random.randint(1000,9999)}-{random.randint(1000,9999)}",
+        "email": f"{name.lower().replace(' ','.')}@example.com",
+        "cargo": random.choice(jobs),
+        "resumo": "Profissional dedicado e proativo com histórico de sucesso em ambientes dinâmicos e desafiadores. Buscando novos desafios para aplicar minhas habilidades técnicas e interpessoais em um ambiente inovador que valorize o crescimento contínuo.",
+        "experiencias": [
+            {"cargo": random.choice(jobs), "empresa": random.choice(companies), "periodo": "2021 - Presente", "descricao": "Liderou projetos estratégicos de ponta a ponta, gerenciando equipes multifuncionais para entregar soluções inovadoras dentro do prazo e orçamento, resultando em um aumento de 20% na eficiência operacional."},
+            {"cargo": "Analista Sênior", "empresa": "DataCorp", "periodo": "2018 - 2021", "descricao": "Desenvolveu dashboards e relatórios analíticos que forneceram insights cruciais para a tomada de decisão da diretoria, levando a uma otimização de custos de 15%."}
+        ],
+        "formacao": f"Bacharel em {random.choice(['Administração de Empresas', 'Ciência da Computação', 'Design Gráfico', 'Economia'])}",
+        "habilidades": random.choice(skills),
+        "cursos": ["Certificação Profissional em Gestão de Projetos (PMP)", "Especialização em Liderança e Gestão de Pessoas"]
+    }
 
 CONVERSATION_FLOW = [
     ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
@@ -474,7 +479,7 @@ def handle_plan_choice(user, message_data):
     else: plan_name = None
     if plan_name:
         update_user(phone, {'plan': plan_name})
-        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo:\n\n1. *Moderno (Recomendado)*\n2. *Clássico*\n3. *Criativo*\n\nÉ só me dizer o número ou o nome."
+        template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo:\n\n1. *Moderno*\n2. *Clássico*\n3. *Criativo*\n\nÉ só me dizer o número ou o nome."
         send_whatsapp_message(phone, template_message)
         update_user(phone, {'state': 'choosing_template'})
     else:
@@ -523,12 +528,189 @@ def create_flow_handler(current_step_index):
             update_user(phone, {'state': 'awaiting_improve_choice'})
             send_whatsapp_message(phone, "Ótimo. Percebi que você adicionou suas experiências. Gostaria que eu usasse minha IA para reescrevê-las de uma forma mais profissional e focada em resultados? (Responda com *sim* ou *não*)")
 for i in range(len(CONVERSATION_FLOW)): create_flow_handler(i)
+    @handle_state('awaiting_experience_job_title')
+def handle_exp_job_title(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '')
+    current_experience = {'cargo': message}
+    update_user(phone, {'state': 'awaiting_experience_company', 'current_experience': json.dumps(current_experience)})
+    send_whatsapp_message(phone, "Entendido. E o nome da empresa?")
 
-# (Todos os outros handlers, como o de experiências, revisão, pagamento, etc.)
+@handle_state('awaiting_experience_company')
+def handle_exp_company(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '')
+    current_experience = json.loads(user.get('current_experience', '{}'))
+    current_experience['empresa'] = message
+    update_user(phone, {'state': 'awaiting_experience_period', 'current_experience': json.dumps(current_experience)})
+    send_whatsapp_message(phone, "Anotado. Qual foi o período? (Ex: 2020 - 2022, ou Jan 2020 - Dez 2022)")
+
+@handle_state('awaiting_experience_period')
+def handle_exp_period(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '')
+    current_experience = json.loads(user.get('current_experience', '{}'))
+    current_experience['periodo'] = message
+    update_user(phone, {'state': 'awaiting_experience_description', 'current_experience': json.dumps(current_experience)})
+    send_whatsapp_message(phone, "Ok. Agora descreva brevemente suas responsabilidades e conquistas nesse cargo.")
+
+@handle_state('awaiting_experience_description')
+def handle_exp_description(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '')
+    current_experience = json.loads(user.get('current_experience', '{}'))
+    current_experience['descricao'] = message
+    
+    resume_data = json.loads(user.get('resume_data', '{}'))
+    if 'experiencias' not in resume_data:
+        resume_data['experiencias'] = []
+    resume_data['experiencias'].append(current_experience)
+    
+    update_user(phone, {'state': 'awaiting_another_experience', 'resume_data': json.dumps(resume_data)})
+    send_whatsapp_message(phone, "Experiência adicionada! Deseja adicionar outra? (Responda com *sim* ou *não*)")
+
+@handle_state('awaiting_another_experience')
+def handle_another_experience(user, message_data):
+    phone, choice = user['phone'], message_data.get('text', '').lower().strip()
+    if choice == 'sim':
+        update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
+        send_whatsapp_message(phone, "Vamos lá. Qual era o seu cargo na próxima experiência?")
+    else:
+        send_whatsapp_message(phone, "Ok, terminamos de adicionar suas experiências.")
+        current_idx = [k for k,q in CONVERSATION_FLOW].index('resumo') # Pula para o próximo passo depois do antigo de experiência
+        next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
+        send_whatsapp_message(phone, next_question)
+        update_user(phone, {'state': f'flow_{next_key}'})
+
+@handle_state('awaiting_improve_choice')
+def handle_improve_choice(user, message_data):
+    phone, choice = user['phone'], message_data.get('text', '').lower().strip()
+    resume_data = json.loads(user['resume_data'])
+    if choice == 'sim':
+        send_whatsapp_message(phone, "Excelente! Deixa comigo, estou otimizando seus textos... ✍️")
+        improved_experiences = improve_experience_descriptions(resume_data.get('experiencias', []))
+        resume_data['experiencias'] = improved_experiences
+        update_user(phone, {'resume_data': json.dumps(resume_data)})
+        send_whatsapp_message(phone, "Prontinho! Textos melhorados.")
+    else:
+        send_whatsapp_message(phone, "Sem problemas! Vamos continuar.")
+    
+    # Avança para o próximo passo do fluxo principal
+    last_handled_index = [k for k,q in CONVERSATION_FLOW].index('cursos')
+    go_to_next_step(phone, resume_data, last_handled_index)
+
+def show_review_menu(phone, resume_data):
+    review_text = "Antes de finalizar, revise seus dados. Para corrigir, diga o número do item:\n\n"
+    for i, (key, _) in enumerate(CONVERSATION_FLOW):
+        review_text += f"*{i+1}. {key.replace('_', ' ').capitalize()}:* {resume_data.get(key, 'Não preenchido')}\n"
+    review_text += "\nSe estiver tudo certo, digite *'finalizar'* para ir ao pagamento!"
+    send_whatsapp_message(phone, review_text)
+    update_user(phone, {'state': 'awaiting_review_choice'})
+
+@handle_state('awaiting_review_choice')
+def handle_review_choice(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '').lower().strip()
+    if message in ['finalizar', 'pagar', 'tudo certo', 'ok']:
+        plan, prices = user['plan'], {'basico': PRECO_BASICO, 'premium': PRECO_PREMIUM, 'revisao_humana': PRECO_REVISAO_HUMANA}
+        price = prices.get(plan, 0.0)
+        send_whatsapp_message(phone, f"Ótimo! Para o plano *{plan.replace('_', ' ').capitalize()}* (R$ {price:.2f}), pague com o PIX abaixo:")
+        send_whatsapp_message(phone, PIX_PAYLOAD_STRING)
+        send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
+        update_user(phone, {'state': 'awaiting_payment_proof'})
+    else:
+        send_whatsapp_message(phone, "Para corrigir, por favor reinicie a conversa por enquanto. Se estiver tudo certo, digite 'finalizar'.")
+
+@handle_state('awaiting_payment_proof')
+def handle_payment_proof(user, message_data):
+    phone = user['phone']
+    if 'image' in message_data:
+        image_url = message_data['image']['url']
+        send_whatsapp_message(phone, "Oba, recebi seu comprovante! 🕵️‍♂️ Analisando com a IA, só um segundo...")
+        analysis = analyze_pix_receipt(image_url)
+        if analysis.get('verified'):
+            send_whatsapp_message(phone, "Pagamento confirmado! ✅")
+            send_whatsapp_message(phone, "Estou preparando seus arquivos...")
+            update_user(phone, {'payment_verified': 1})
+            deliver_final_product(user)
+        else:
+            send_whatsapp_message(phone, "Hmm, não confirmei seu pagamento. Tente enviar uma imagem mais nítida.")
+    else:
+        send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante.")
 
 def deliver_final_product(user, test_data=None, debug=False):
-    # ... (código da entrega final)
-    pass
+    phone, plan = user['phone'], user.get('plan')
+    resume_data = test_data or json.loads(user.get('resume_data', '{}'))
+    
+    if debug:
+        templates_to_test = ['moderno', 'classico', 'criativo']
+        for t in templates_to_test:
+            send_whatsapp_message(phone, f"Gerando currículo de teste: *{t.capitalize()}*...")
+            pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{t}.pdf")
+            generate_resume_pdf(resume_data, t, pdf_path)
+            send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), f"Modelo: {t.capitalize()}")
+            os.remove(pdf_path)
+            
+            english_data = translate_resume_data_to_english(resume_data)
+            if english_data:
+                english_pdf_path = os.path.join(TEMP_DIR, f"Resume_English_{t}.pdf")
+                generate_resume_pdf(english_data, t, english_pdf_path)
+                send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), f"Modelo Inglês: {t.capitalize()}")
+                os.remove(english_pdf_path)
+
+        send_whatsapp_message(phone, "Gerando carta de apresentação de teste...")
+        cover_letter_text = generate_cover_letter_text(resume_data)
+        if cover_letter_text:
+            letter_path = os.path.join(TEMP_DIR, f"carta_apresentacao_{phone}.pdf")
+            generate_simple_text_pdf(cover_letter_text, letter_path)
+            send_whatsapp_document(phone, letter_path, "Carta_de_Apresentacao.pdf", "E aqui sua carta de apresentação!")
+            os.remove(letter_path)
+        send_whatsapp_message(phone, "Modo de teste concluído!")
+        return
+
+    template = user['template']
+    send_whatsapp_message(phone, "Preparando seu currículo principal...")
+    pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{resume_data.get('nome_completo', 'user').split(' ')[0]}.pdf")
+    generate_resume_pdf(resume_data, template, pdf_path)
+    send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), "Seu currículo novinho em folha!")
+    os.remove(pdf_path)
+    
+    if plan in ['premium', 'revisao_humana']:
+        send_whatsapp_message(phone, "Gerando bônus do plano premium...")
+        english_data = translate_resume_data_to_english(resume_data)
+        if english_data:
+            english_pdf_path = os.path.join(TEMP_DIR, f"Resume_English_{english_data.get('full_name', 'user').split(' ')[0]}.pdf")
+            generate_resume_pdf(english_data, template, english_pdf_path)
+            send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), "Aqui está sua versão em Inglês!")
+            os.remove(english_pdf_path)
+        cover_letter_text = generate_cover_letter_text(resume_data)
+        if cover_letter_text:
+            letter_path = os.path.join(TEMP_DIR, f"carta_apresentacao_{phone}.pdf")
+            generate_simple_text_pdf(cover_letter_text, letter_path)
+            send_whatsapp_document(phone, letter_path, "Carta_de_Apresentacao.pdf", "E aqui sua carta de apresentação!")
+            os.remove(letter_path)
+            
+    if plan == 'revisao_humana':
+        send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
+    
+    update_user(phone, {'state': 'awaiting_interview_prep_choice'})
+    send_whatsapp_message(phone, "Seus arquivos foram entregues! 📄✨\n\nComo um bônus final, gostaria que eu gerasse uma lista de possíveis perguntas de entrevista com base no seu currículo? (Responda com *sim* ou *não*)")
+
+@handle_state('awaiting_interview_prep_choice')
+def handle_interview_prep(user, message_data):
+    phone = user['phone']
+    choice = message_data.get('text', '').lower().strip()
+    if choice == 'sim':
+        send_whatsapp_message(phone, "Ótima ideia! Analisando seu perfil para criar as melhores perguntas... 🧠")
+        resume_data = json.loads(user['resume_data'])
+        questions = generate_interview_questions(resume_data)
+        send_whatsapp_message(phone, f"Aqui estão algumas perguntas para você treinar:\n\n{questions}")
+        send_whatsapp_message(phone, "Boa sorte na sua preparação! 🚀")
+    else:
+        send_whatsapp_message(phone, "Entendido! Sem problemas. Muito sucesso na sua jornada! 🚀")
+    update_user(phone, {'state': 'completed'})
+    
+@handle_state('completed')
+def handle_completed(user, message_data):
+    send_whatsapp_message(user['phone'], "Olá! Vi que você já completou seu currículo. Se precisar de algo mais, é só chamar!")
+
+def handle_default(user, message_data):
+    send_whatsapp_message(user['phone'], "Desculpe, não entendi o que você quis dizer. Para recomeçar, digite 'oi'.")
 
 # ==============================================================================
 # --- WEBHOOK e INICIALIZAÇÃO
