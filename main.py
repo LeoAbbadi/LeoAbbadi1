@@ -26,7 +26,8 @@ app = Flask(__name__)
 BOT_NAME = "Cadu"
 
 # --- MODO DE TESTE ---
-DEBUG_PHONE_NUMBERS = ["555195995888", "555199864475"] 
+# Adicione números de telefone aqui para ativar o modo de teste, que gera todos os PDFs.
+DEBUG_PHONE_NUMBERS = ["555195995888", "555199864475"]
 
 # --- CHAVES E CONFIGS ---
 ZAPI_INSTANCE_ID = os.environ.get('ZAPI_INSTANCE_ID')
@@ -64,7 +65,8 @@ def init_database():
         CREATE TABLE IF NOT EXISTS users (
             phone TEXT PRIMARY KEY, state TEXT, resume_data TEXT,
             plan TEXT DEFAULT 'none', template TEXT DEFAULT 'none',
-            payment_verified INTEGER DEFAULT 0, last_interaction TIMESTAMP
+            payment_verified INTEGER DEFAULT 0, last_interaction TIMESTAMP,
+            current_experience TEXT
         )
     ''')
     conn.commit()
@@ -85,9 +87,14 @@ def update_user(phone, data):
     conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
     cursor = conn.cursor()
     if not user:
-        initial_data = {'phone': phone, 'state': 'awaiting_welcome', 'resume_data': json.dumps({}), 'plan': 'none', 'template': 'none', 'payment_verified': 0, 'last_interaction': datetime.now()}
+        initial_data = {
+            'phone': phone, 'state': 'awaiting_welcome', 'resume_data': json.dumps({}),
+            'plan': 'none', 'template': 'none', 'payment_verified': 0,
+            'last_interaction': datetime.now(), 'current_experience': json.dumps({})
+        }
         initial_data.update(data)
-        columns, placeholders = ', '.join(initial_data.keys()), ', '.join('?' * len(initial_data))
+        columns = ', '.join(initial_data.keys())
+        placeholders = ', '.join('?' * len(initial_data))
         sql = f'INSERT INTO users ({columns}) VALUES ({placeholders})'
         cursor.execute(sql, tuple(initial_data.values()))
     else:
@@ -182,7 +189,7 @@ def improve_experience_descriptions(experiences):
         return experiences
     except:
         return experiences
-        
+
 def generate_interview_questions(resume_data):
     system_prompt = "Você é um recrutador sênior preparando uma entrevista para a vaga de '{cargo}'. Com base no currículo do candidato, crie uma lista de 5 a 7 perguntas de entrevista perspicazes e relevantes, misturando perguntas comportamentais (STAR: Situação, Tarefa, Ação, Resultado) e técnicas baseadas nas experiências e habilidades listadas. Formate a resposta como um texto único, com cada pergunta numerada."
     user_prompt = f"Currículo do candidato:\n{json.dumps(resume_data, indent=2, ensure_ascii=False)}\n\nListe as perguntas para a entrevista:"
@@ -209,7 +216,7 @@ class PDF(FPDF):
 def generate_resume_pdf(data, template_choice, path):
     templates = {
         'moderno': generate_template_moderno,
-        'classico': generate_template_classico, 
+        'classico': generate_template_classico,
         'criativo': generate_template_criativo
     }
     pdf_function = templates.get(template_choice, generate_template_moderno)
@@ -231,14 +238,14 @@ def generate_template_moderno(data, path):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     SIDEBAR_COLOR, ACCENT_COLOR = (45, 52, 54), (26, 188, 156)
-    
+
     pdf.set_fill_color(*SIDEBAR_COLOR)
     pdf.rect(0, 0, 70, 297, 'F')
     pdf.set_xy(10, 20)
     pdf.set_text_color(255, 255, 255)
-    
+
     lang = 'en' if 'full_name' in data else 'pt'
-    
+
     def add_sidebar_section(title, content):
         if not content or not str(content).strip(): return
         pdf.set_x(10)
@@ -263,7 +270,7 @@ def generate_template_moderno(data, path):
     pdf.set_x(80)
     pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'L')
     pdf.ln(8)
-    
+
     def add_right_section(title, content):
         if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
             pdf.set_x(80)
@@ -279,13 +286,13 @@ def generate_template_moderno(data, path):
                 for item in content:
                     pdf.set_x(80)
                     pdf.set_font(pdf.font_bold, 'B', 10)
-                    pdf.multi_cell(120, 6, f"{item.get('cargo', '')} | {item.get('empresa', '')}", 0, 'L')
+                    pdf.multi_cell(120, 6, f"{item.get('cargo', item.get('title', ''))} | {item.get('empresa', item.get('company', ''))}", 0, 'L')
                     pdf.set_font(pdf.font_regular, 'I', 9)
                     pdf.set_x(80)
-                    pdf.cell(0, 6, item.get('periodo', ''), 0, 1)
+                    pdf.cell(0, 6, item.get('periodo', item.get('period', '')), 0, 1)
                     pdf.set_font(pdf.font_regular, '', 10)
                     pdf.set_x(85)
-                    pdf.multi_cell(115, 5, f"• {item.get('descricao', '')}")
+                    pdf.multi_cell(115, 5, f"• {item.get('descricao', item.get('description', ''))}")
                     pdf.ln(3)
             elif isinstance(content, list):
                 pdf.set_x(80)
@@ -294,10 +301,10 @@ def generate_template_moderno(data, path):
                 pdf.set_x(80)
                 pdf.multi_cell(120, 6, content)
             pdf.ln(4)
-            
+
     title_map_pt = {"resumo": "Resumo Profissional", "experiencias": "Experiência Profissional", "cursos": "Cursos e Certificações"}
     title_map_en = {"professional_summary": "Professional Summary", "work_experience": "Work Experience", "courses_certifications": "Courses & Certifications"}
-    
+
     add_right_section(title_map_pt.get('resumo') if lang == 'pt' else title_map_en.get('professional_summary'), data.get('resumo') or data.get('professional_summary'))
     add_right_section(title_map_pt.get('experiencias') if lang == 'pt' else title_map_en.get('work_experience'), data.get('experiencias') or data.get('work_experience'))
     add_right_section(title_map_pt.get('cursos') if lang == 'pt' else title_map_en.get('courses_certifications'), data.get('cursos') or data.get('courses_certifications'))
@@ -308,9 +315,9 @@ def generate_template_classico(data, path):
     pdf.add_font_setup()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
+
     lang = 'en' if 'full_name' in data else 'pt'
-    
+
     pdf.set_font(pdf.font_bold, 'B', 24)
     pdf.cell(0, 12, data.get('nome_completo') or data.get('full_name'), 0, 1, 'C')
     pdf.set_font(pdf.font_regular, '', 11)
@@ -328,18 +335,18 @@ def generate_template_classico(data, path):
             if isinstance(content, list) and all(isinstance(i, dict) for i in content):
                 for item in content:
                     pdf.set_font(pdf.font_bold, 'B', 10)
-                    pdf.cell(0, 6, f"{item.get('cargo', '')}, {item.get('empresa', '')}", 0, 1)
+                    pdf.cell(0, 6, f"{item.get('cargo', item.get('title', ''))}, {item.get('empresa', item.get('company', ''))}", 0, 1)
                     pdf.set_font(pdf.font_regular, 'I', 9)
-                    pdf.cell(0, 5, item.get('periodo', ''), 0, 1)
+                    pdf.cell(0, 5, item.get('periodo', item.get('period', '')), 0, 1)
                     pdf.set_font(pdf.font_regular, '', 10)
-                    pdf.multi_cell(0, 5, f"  • {item.get('descricao', '')}")
+                    pdf.multi_cell(0, 5, f"  • {item.get('descricao', item.get('description', ''))}")
                     pdf.ln(3)
             elif isinstance(content, list):
                 pdf.multi_cell(0, 5, "\n".join([f"• {item}" for item in content]))
             else:
                 pdf.multi_cell(0, 5, content)
             pdf.ln(4)
-    
+
     title_map_pt = {"resumo": "Resumo", "experiencias": "Experiência Profissional", "formacao": "Formação Acadêmica", "habilidades": "Habilidades", "cursos": "Cursos"}
     title_map_en = {"professional_summary": "Summary", "work_experience": "Work Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses"}
 
@@ -365,7 +372,7 @@ def generate_template_criativo(data, path):
     pdf.cell(0, 10, data.get('nome_completo') or data.get('full_name'), 0, 1, 'C')
     pdf.set_font(pdf.font_regular, '', 12)
     pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'C')
-    
+
     pdf.set_y(55)
     lang = 'en' if 'full_name' in data else 'pt'
     def add_section(title, content):
@@ -378,28 +385,29 @@ def generate_template_criativo(data, path):
             if isinstance(content, list) and all(isinstance(i, dict) for i in content):
                 for item in content:
                     pdf.set_font(pdf.font_bold, 'B', 10)
-                    pdf.multi_cell(0, 6, f"{item.get('cargo', '')} | {item.get('empresa', '')}", 0, 'L')
+                    pdf.multi_cell(0, 6, f"{item.get('cargo', item.get('title', ''))} | {item.get('empresa', item.get('company', ''))}", 0, 'L')
                     pdf.set_font(pdf.font_regular, 'I', 9)
-                    pdf.cell(0, 6, item.get('periodo', ''), 0, 1)
+                    pdf.cell(0, 6, item.get('periodo', item.get('period', '')), 0, 1)
                     pdf.set_font(pdf.font_regular, '', 10)
-                    pdf.multi_cell(0, 5, f"• {item.get('descricao', '')}")
+                    pdf.multi_cell(0, 5, f"• {item.get('descricao', item.get('description', ''))}")
                     pdf.ln(3)
             elif isinstance(content, list):
                 pdf.multi_cell(0, 5, "\n".join([f"• {item}" for item in content]))
             else:
                 pdf.multi_cell(0, 5, content)
             pdf.ln(5)
-            
+
     title_map_pt = {"resumo": "Sobre Mim", "experiencias": "Experiência", "formacao": "Educação", "habilidades": "Competências", "cursos": "Cursos"}
     title_map_en = {"professional_summary": "About Me", "work_experience": "Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses"}
-    
+
     add_section(title_map_pt.get('resumo') if lang == 'pt' else title_map_en.get('professional_summary'), data.get('resumo') or data.get('professional_summary'))
     add_section(title_map_pt.get('experiencias') if lang == 'pt' else title_map_en.get('work_experience'), data.get('experiencias') or data.get('work_experience'))
     add_section(title_map_pt.get('formacao') if lang == 'pt' else title_map_en.get('education'), data.get('formacao') or data.get('education'))
     add_section(title_map_pt.get('habilidades') if lang == 'pt' else title_map_en.get('skills'), data.get('habilidades') or data.get('skills'))
     add_section(title_map_pt.get('cursos') if lang == 'pt' else title_map_en.get('courses_certifications'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
-    # ==============================================================================
+
+# ==============================================================================
 # --- FLUXO DA CONVERSA
 # ==============================================================================
 def generate_fake_data():
@@ -473,10 +481,11 @@ def show_payment_options(phone):
 @handle_state('awaiting_plan_choice')
 def handle_plan_choice(user, message_data):
     phone, choice = user['phone'], message_data.get('text', '').lower().strip()
+    plan_name = None
     if 'básico' in choice or 'basico' in choice: plan_name = 'basico'
     elif 'premium' in choice: plan_name = 'premium'
     elif 'revisão' in choice or 'revisao' in choice or 'humana' in choice: plan_name = 'revisao_humana'
-    else: plan_name = None
+
     if plan_name:
         update_user(phone, {'plan': plan_name})
         template_message = "Ótima escolha! Agora, vamos escolher o visual do seu currículo:\n\n1. *Moderno*\n2. *Clássico*\n3. *Criativo*\n\nÉ só me dizer o número ou o nome."
@@ -489,8 +498,8 @@ def handle_plan_choice(user, message_data):
 def handle_choosing_template(user, message_data):
     phone, message = user['phone'], message_data.get('text', '').lower().strip()
     template_map = {'1': 'moderno', 'moderno': 'moderno', '2': 'classico', 'clássico': 'classico', '3': 'criativo', 'criativo': 'criativo'}
-    chosen_template = template_map.get(message, message)
-    if chosen_template in template_map.values():
+    chosen_template = template_map.get(message, None)
+    if chosen_template:
         update_user(phone, {'template': chosen_template, 'state': 'flow_nome_completo'})
         send_whatsapp_message(phone, f"Perfeito! Vamos criar seu currículo no estilo *{chosen_template.capitalize()}*.")
         send_whatsapp_message(phone, CONVERSATION_FLOW[0][1])
@@ -499,38 +508,60 @@ def handle_choosing_template(user, message_data):
 
 def create_flow_handler(current_step_index):
     current_key, current_question = CONVERSATION_FLOW[current_step_index]
+    
     @handle_state(f'flow_{current_key}')
     def flow_handler(user, message_data):
         phone, message = user['phone'], message_data.get('text', '')
         resume_data = json.loads(user['resume_data'])
-        if current_key == 'resumo' and message.lower().strip() == 'pular': 
+        
+        extracted_info = ""
+        if current_key == 'resumo' and message.lower().strip() in ['pular', 'nao', 'não']:
             extracted_info = "Não informado"
         elif current_key == 'email':
             extracted_info = extract_info_from_message(current_question, message).lower()
-        else: 
+        else:
             extracted_info = extract_info_from_message(current_question, message)
+
         resume_data[current_key] = extracted_info
         update_user(phone, {'resume_data': json.dumps(resume_data)})
+        
         go_to_next_step(phone, resume_data, current_step_index)
-    def go_to_next_step(phone, resume_data, current_idx):
-        if CONVERSATION_FLOW[current_idx][0] == 'resumo':
-            update_user(phone, {'state': 'awaiting_experience_job_title', 'resume_data': json.dumps(resume_data), 'current_experience': json.dumps({})})
-            send_whatsapp_message(phone, "Ótimo. Agora vamos adicionar suas experiências profissionais. Qual era o seu cargo na sua experiência mais recente?")
-            return
-        if current_idx + 1 < len(CONVERSATION_FLOW):
-            next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
-            if '{nome}' in next_question:
-                user_name = resume_data.get('nome_completo', '').split(' ')[0]
-                next_question = next_question.format(nome=user_name.capitalize())
-            send_whatsapp_message(phone, next_question)
-            update_user(phone, {'state': f'flow_{next_key}'})
-        else: # Fim do fluxo principal
-            update_user(phone, {'state': 'awaiting_improve_choice'})
-            send_whatsapp_message(phone, "Ótimo. Percebi que você adicionou suas experiências. Gostaria que eu usasse minha IA para reescrevê-las de uma forma mais profissional e focada em resultados? (Responda com *sim* ou *não*)")
-for i in range(len(CONVERSATION_FLOW)): create_flow_handler(i)
-    @handle_state('awaiting_experience_job_title')
+
+def go_to_next_step(phone, resume_data, current_idx):
+    # Condição para iniciar a coleta de experiência profissional
+    if CONVERSATION_FLOW[current_idx][0] == 'resumo':
+        update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
+        send_whatsapp_message(phone, "Ótimo. Agora vamos adicionar suas experiências profissionais, começando pela mais recente. Se não tiver, diga 'pular'. Qual foi seu cargo?")
+        return
+
+    # Condição para ir para o próximo passo do fluxo principal
+    if current_idx + 1 < len(CONVERSATION_FLOW):
+        next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
+        
+        # Formata a pergunta se necessário
+        if '{nome}' in next_question:
+            user_name = resume_data.get('nome_completo', '').split(' ')[0]
+            next_question = next_question.format(nome=user_name.capitalize())
+
+        send_whatsapp_message(phone, next_question)
+        update_user(phone, {'state': f'flow_{next_key}'})
+    else: # Fim do fluxo principal de perguntas
+        show_review_menu(phone, resume_data)
+
+for i in range(len(CONVERSATION_FLOW)):
+    create_flow_handler(i)
+
+@handle_state('awaiting_experience_job_title')
 def handle_exp_job_title(user, message_data):
     phone, message = user['phone'], message_data.get('text', '')
+    if message.lower().strip() in ['pular', 'nao', 'não']:
+        # Pula toda a seção de experiência
+        current_idx = [k for k, q in CONVERSATION_FLOW].index('resumo')
+        next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
+        send_whatsapp_message(phone, next_question)
+        update_user(phone, {'state': f'flow_{next_key}'})
+        return
+        
     current_experience = {'cargo': message}
     update_user(phone, {'state': 'awaiting_experience_company', 'current_experience': json.dumps(current_experience)})
     send_whatsapp_message(phone, "Entendido. E o nome da empresa?")
@@ -572,11 +603,10 @@ def handle_another_experience(user, message_data):
         update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
         send_whatsapp_message(phone, "Vamos lá. Qual era o seu cargo na próxima experiência?")
     else:
+        # Após coletar experiências, pergunta sobre a otimização por IA
         send_whatsapp_message(phone, "Ok, terminamos de adicionar suas experiências.")
-        current_idx = [k for k,q in CONVERSATION_FLOW].index('resumo') # Pula para o próximo passo depois do antigo de experiência
-        next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
-        send_whatsapp_message(phone, next_question)
-        update_user(phone, {'state': f'flow_{next_key}'})
+        update_user(phone, {'state': 'awaiting_improve_choice'})
+        send_whatsapp_message(phone, "Gostaria que eu usasse minha IA para reescrever suas experiências de uma forma mais profissional e focada em resultados? (Responda com *sim* ou *não*)")
 
 @handle_state('awaiting_improve_choice')
 def handle_improve_choice(user, message_data):
@@ -591,17 +621,43 @@ def handle_improve_choice(user, message_data):
     else:
         send_whatsapp_message(phone, "Sem problemas! Vamos continuar.")
     
-    # Avança para o próximo passo do fluxo principal
-    last_handled_index = [k for k,q in CONVERSATION_FLOW].index('cursos')
-    go_to_next_step(phone, resume_data, last_handled_index)
+    # Continua o fluxo de onde parou (depois da experiência)
+    current_idx = [k for k, q in CONVERSATION_FLOW].index('resumo')
+    next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
+    send_whatsapp_message(phone, next_question)
+    update_user(phone, {'state': f'flow_{next_key}'})
 
 def show_review_menu(phone, resume_data):
     review_text = "Antes de finalizar, revise seus dados. Para corrigir, diga o número do item:\n\n"
-    for i, (key, _) in enumerate(CONVERSATION_FLOW):
-        review_text += f"*{i+1}. {key.replace('_', ' ').capitalize()}:* {resume_data.get(key, 'Não preenchido')}\n"
+    # Mapeia chaves internas para nomes amigáveis
+    key_map = {
+        'nome_completo': 'Nome Completo', 'cidade_estado': 'Cidade/Estado', 'telefone': 'Telefone',
+        'email': 'E-mail', 'cargo': 'Cargo Desejado', 'resumo': 'Resumo Profissional',
+        'experiencias': 'Experiências', 'formacao': 'Formação', 'habilidades': 'Habilidades', 'cursos': 'Cursos'
+    }
+    
+    flow_keys = [key for key, _ in CONVERSATION_FLOW]
+    all_keys_in_order = flow_keys[:6] + ['experiencias'] + flow_keys[6:] # Insere 'experiencias' no lugar certo
+
+    display_data = ""
+    for i, key in enumerate(all_keys_in_order):
+        friendly_name = key_map.get(key, key.replace('_', ' ').capitalize())
+        value = resume_data.get(key, 'Não preenchido')
+        
+        if key == 'experiencias' and isinstance(value, list):
+            exp_text = ""
+            for exp in value:
+                exp_text += f"\n  - {exp.get('cargo', '')} em {exp.get('empresa', '')}"
+            value = exp_text if exp_text else "Nenhuma"
+            display_data += f"*{i+1}. {friendly_name}:*{value}\n"
+        else:
+            display_data += f"*{i+1}. {friendly_name}:* {value}\n"
+
+    review_text += display_data
     review_text += "\nSe estiver tudo certo, digite *'finalizar'* para ir ao pagamento!"
     send_whatsapp_message(phone, review_text)
     update_user(phone, {'state': 'awaiting_review_choice'})
+
 
 @handle_state('awaiting_review_choice')
 def handle_review_choice(user, message_data):
@@ -614,28 +670,29 @@ def handle_review_choice(user, message_data):
         send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
         update_user(phone, {'state': 'awaiting_payment_proof'})
     else:
-        send_whatsapp_message(phone, "Para corrigir, por favor reinicie a conversa por enquanto. Se estiver tudo certo, digite 'finalizar'.")
+        # Simplificado para evitar loop de correção complexo
+        send_whatsapp_message(phone, "Para corrigir algum dado, por favor reinicie a conversa digitando 'oi'. Se estiver tudo certo, digite 'finalizar'.")
 
 @handle_state('awaiting_payment_proof')
 def handle_payment_proof(user, message_data):
     phone = user['phone']
-    if 'image' in message_data:
+    if 'image' in message_data and 'url' in message_data['image']:
         image_url = message_data['image']['url']
         send_whatsapp_message(phone, "Oba, recebi seu comprovante! 🕵️‍♂️ Analisando com a IA, só um segundo...")
         analysis = analyze_pix_receipt(image_url)
         if analysis.get('verified'):
             send_whatsapp_message(phone, "Pagamento confirmado! ✅")
             send_whatsapp_message(phone, "Estou preparando seus arquivos...")
-            update_user(phone, {'payment_verified': 1})
+            update_user(phone, {'payment_verified': 1, 'state': 'delivering'})
             deliver_final_product(user)
         else:
-            send_whatsapp_message(phone, "Hmm, não confirmei seu pagamento. Tente enviar uma imagem mais nítida.")
+            send_whatsapp_message(phone, "Hmm, não consegui confirmar o pagamento para o nome correto. Tente enviar uma imagem mais nítida do comprovante. Se o problema persistir, fale com o suporte.")
     else:
-        send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante.")
+        send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante de pagamento.")
 
 def deliver_final_product(user, test_data=None, debug=False):
     phone, plan = user['phone'], user.get('plan')
-    resume_data = test_data or json.loads(user.get('resume_data', '{}'))
+    resume_data = test_data if test_data else json.loads(user.get('resume_data', '{}'))
     
     if debug:
         templates_to_test = ['moderno', 'classico', 'criativo']
@@ -661,6 +718,7 @@ def deliver_final_product(user, test_data=None, debug=False):
             send_whatsapp_document(phone, letter_path, "Carta_de_Apresentacao.pdf", "E aqui sua carta de apresentação!")
             os.remove(letter_path)
         send_whatsapp_message(phone, "Modo de teste concluído!")
+        update_user(phone, {'state': 'completed'}) # Finaliza o fluxo de teste
         return
 
     template = user['template']
@@ -707,10 +765,18 @@ def handle_interview_prep(user, message_data):
     
 @handle_state('completed')
 def handle_completed(user, message_data):
-    send_whatsapp_message(user['phone'], "Olá! Vi que você já completou seu currículo. Se precisar de algo mais, é só chamar!")
+    send_whatsapp_message(user['phone'], f"Olá! Eu sou o {BOT_NAME}. Já finalizamos seu currículo, mas se precisar de uma nova versão ou de ajuda com outra coisa, é só me chamar digitando 'oi' para recomeçar! 😉")
 
 def handle_default(user, message_data):
-    send_whatsapp_message(user['phone'], "Desculpe, não entendi o que você quis dizer. Para recomeçar, digite 'oi'.")
+    phone = user['phone']
+    text = message_data.get('text', '').lower().strip()
+    # Palavra-chave para reiniciar o fluxo
+    if text in ['oi', 'ola', 'olá', 'recomeçar', 'começar']:
+        update_user(phone, {'state': 'awaiting_welcome', 'resume_data': json.dumps({}), 'plan': 'none', 'template': 'none', 'payment_verified': 0})
+        handle_welcome(user, message_data)
+    else:
+        send_whatsapp_message(user['phone'], "Desculpe, não entendi o que você quis dizer. Para recomeçar o processo de criação do currículo, digite 'oi'.")
+
 
 # ==============================================================================
 # --- WEBHOOK e INICIALIZAÇÃO
@@ -724,16 +790,28 @@ def webhook():
     try:
         data = request.json
         logging.info(f"Webhook recebido: {json.dumps(data, indent=2)}")
+        
+        # Adaptação para diferentes estruturas de webhook da Z-API
         phone = data.get('phone')
         message_data = {}
-        if data.get('text') and data.get('text', {}).get('message'):
+        
+        # Mensagem de texto
+        if data.get('text') and isinstance(data.get('text'), str): # Estrutura mais nova/simples
+            message_data['text'] = data['text']
+        elif data.get('text') and isinstance(data.get('text'), dict) and 'message' in data['text']: # Estrutura antiga
             message_data['text'] = data['text']['message']
-        elif data.get('image') and data.get('image', {}).get('imageUrl'):
-            message_data['image'] = {'url': data['image']['imageUrl']}
+        
+        # Mensagem de imagem
+        elif data.get('type') == 'image' and data.get('imageUrl'):
+            message_data['image'] = {'url': data['imageUrl']}
+        elif data.get('image') and isinstance(data.get('image'), dict) and 'imageUrl' in data['image']:
+             message_data['image'] = {'url': data['image']['imageUrl']}
+
         if phone and message_data:
             process_message(phone, message_data)
         else:
-            logging.warning(f"Webhook de {phone} recebido sem dados de mensagem válidos.")
+            logging.warning(f"Webhook de {phone} recebido sem dados de mensagem válidos ou número de telefone.")
+            
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
         logging.error(f"Erro crítico no webhook: {e}", exc_info=True)
@@ -746,13 +824,17 @@ def check_abandoned_sessions():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         time_limit = datetime.now() - timedelta(hours=24)
-        cursor.execute("SELECT * FROM users WHERE last_interaction < ? AND state NOT IN ('completed', 'reminded')", (time_limit,))
+        
+        # Adiciona condição para não lembrar usuários que já receberam lembrete
+        cursor.execute("SELECT * FROM users WHERE last_interaction < ? AND state NOT IN ('completed', 'reminded', 'delivering')", (time_limit,))
         abandoned_users = cursor.fetchall()
+        
         for user in abandoned_users:
             logging.info(f"Enviando lembrete para: {user['phone']}")
-            message = f"Olá, {BOT_NAME} passando para dar um oi! 👋 Vi que começamos a montar seu currículo mas não terminamos. Que tal continuarmos de onde paramos?"
+            message = f"Olá, {BOT_NAME} passando para dar um oi! 👋 Vi que começamos a montar seu currículo mas não terminamos. Que tal continuarmos de onde paramos? É só responder a última pergunta!"
             send_whatsapp_message(user['phone'], message)
-            update_user(user['phone'], {'state': 'reminded'})
+            update_user(user['phone'], {'state': 'reminded'}) # Atualiza o estado para não enviar novamente
+            
         conn.close()
 
 init_database()
@@ -762,4 +844,5 @@ if __name__ == '__main__':
     scheduler.add_job(check_abandoned_sessions, 'interval', hours=6)
     scheduler.start()
     port = int(os.environ.get('PORT', 8080))
+    # 'debug=False' é importante para produção
     app.run(host='0.0.0.0', port=port, debug=False)
