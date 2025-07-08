@@ -128,7 +128,7 @@ def send_whatsapp_document(phone, doc_path, filename, caption=""):
     payload = {"phone": phone, "document": f"data:application/pdf;base64,{doc_base64}", "fileName": filename, "caption": caption}
     headers = {"Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN}
     try:
-        requests.post(url, json=payload, headers=headers, timeout=20)
+        requests.post(url, json=payload, headers=headers, timeout=30) # Aumentado o timeout para envio de arquivo
     except requests.exceptions.RequestException as e:
         logging.error(f"Erro ao enviar documento para {phone}: {e}")
 
@@ -201,14 +201,31 @@ def generate_interview_questions(resume_data):
 class PDF(FPDF):
     def add_font_setup(self):
         try:
-            self.add_font('DejaVu', '', os.path.join(FONT_DIR, 'DejaVuSans.ttf'), uni=True)
-            self.add_font('DejaVu', 'B', os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf'), uni=True)
-            self.add_font('DejaVu', 'I', os.path.join(FONT_DIR, 'DejaVuSans-Oblique.ttf'), uni=True)
-            self.add_font('DejaVu', 'BI', os.path.join(FONT_DIR, 'DejaVuSans-BoldOblique.ttf'), uni=True)
+            # Garante que a pasta de fontes existe
+            if not os.path.exists(FONT_DIR):
+                os.makedirs(FONT_DIR)
+                logging.warning(f"Pasta de fontes não encontrada, criada em {FONT_DIR}. Faça o upload dos arquivos .ttf.")
+            
+            # Verifica a existência de cada arquivo de fonte
+            font_paths = {
+                'DejaVu': os.path.join(FONT_DIR, 'DejaVuSans.ttf'),
+                'DejaVuB': os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf'),
+                'DejaVuI': os.path.join(FONT_DIR, 'DejaVuSans-Oblique.ttf'),
+                'DejaVuBI': os.path.join(FONT_DIR, 'DejaVuSans-BoldOblique.ttf'),
+            }
+
+            for path in font_paths.values():
+                if not os.path.isfile(path):
+                    raise RuntimeError(f"Arquivo de fonte não encontrado: {path}")
+
+            self.add_font('DejaVu', '', font_paths['DejaVu'], uni=True)
+            self.add_font('DejaVu', 'B', font_paths['DejaVuB'], uni=True)
+            self.add_font('DejaVu', 'I', font_paths['DejaVuI'], uni=True)
+            self.add_font('DejaVu', 'BI', font_paths['DejaVuBI'], uni=True)
             self.font_regular = 'DejaVu'
             self.font_bold = 'DejaVu'
-        except RuntimeError as e:
-            logging.error(f"ERRO DE FONTE: {e}. Verifique se a pasta 'fonts' e os 4 arquivos .ttf estão no seu GitHub.")
+        except Exception as e:
+            logging.error(f"ERRO DE FONTE: {e}. Usando 'Helvetica' como alternativa.")
             self.font_regular = 'Helvetica'
             self.font_bold = 'Helvetica'
         self.set_font(self.font_regular, '', 10)
@@ -690,22 +707,30 @@ def handle_payment_proof(user, message_data):
     else:
         send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante de pagamento.")
 
+# ############################################################################ #
+# ## FUNÇÃO MODIFICADA ##
+# ############################################################################ #
 def deliver_final_product(user, test_data=None, debug=False):
     phone, plan = user['phone'], user.get('plan')
     resume_data = test_data if test_data else json.loads(user.get('resume_data', '{}'))
     
     if debug:
         templates_to_test = ['moderno', 'classico', 'criativo']
+        
+        # Traduz os dados para o inglês UMA VEZ para ser mais eficiente
+        english_data = translate_resume_data_to_english(resume_data)
+
         for t in templates_to_test:
             send_whatsapp_message(phone, f"Gerando currículo de teste: *{t.capitalize()}*...")
-            pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{t}.pdf")
+            pdf_path = os.path.join(TEMP_DIR, f"Curriculo_Teste_{t}.pdf")
             generate_resume_pdf(resume_data, t, pdf_path)
             send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), f"Modelo: {t.capitalize()}")
             os.remove(pdf_path)
             
-            english_data = translate_resume_data_to_english(resume_data)
-            if english_data:
-                english_pdf_path = os.path.join(TEMP_DIR, f"Resume_English_{t}.pdf")
+            # --- ALTERAÇÃO PRINCIPAL AQUI ---
+            # Gera a versão em inglês APENAS para o template 'moderno'
+            if t == 'moderno' and english_data:
+                english_pdf_path = os.path.join(TEMP_DIR, f"Resume_English_Teste_{t}.pdf")
                 generate_resume_pdf(english_data, t, english_pdf_path)
                 send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), f"Modelo Inglês: {t.capitalize()}")
                 os.remove(english_pdf_path)
@@ -713,15 +738,22 @@ def deliver_final_product(user, test_data=None, debug=False):
         send_whatsapp_message(phone, "Gerando carta de apresentação de teste...")
         cover_letter_text = generate_cover_letter_text(resume_data)
         if cover_letter_text:
-            letter_path = os.path.join(TEMP_DIR, f"carta_apresentacao_{phone}.pdf")
+            letter_path = os.path.join(TEMP_DIR, f"carta_apresentacao_teste_{phone}.pdf")
             generate_simple_text_pdf(cover_letter_text, letter_path)
             send_whatsapp_document(phone, letter_path, "Carta_de_Apresentacao.pdf", "E aqui sua carta de apresentação!")
             os.remove(letter_path)
+            
         send_whatsapp_message(phone, "Modo de teste concluído!")
         update_user(phone, {'state': 'completed'}) # Finaliza o fluxo de teste
         return
 
-    template = user['template']
+    # --- Lógica para usuários normais (não-debug) ---
+    template = user.get('template')
+    if not template:
+        logging.error(f"Usuário {phone} sem template definido ao tentar entregar produto.")
+        send_whatsapp_message(phone, "Ocorreu um erro, não consegui encontrar o template que você escolheu. Por favor, reinicie a conversa com 'oi'.")
+        return
+
     send_whatsapp_message(phone, "Preparando seu currículo principal...")
     pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{resume_data.get('nome_completo', 'user').split(' ')[0]}.pdf")
     generate_resume_pdf(resume_data, template, pdf_path)
@@ -736,6 +768,7 @@ def deliver_final_product(user, test_data=None, debug=False):
             generate_resume_pdf(english_data, template, english_pdf_path)
             send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), "Aqui está sua versão em Inglês!")
             os.remove(english_pdf_path)
+            
         cover_letter_text = generate_cover_letter_text(resume_data)
         if cover_letter_text:
             letter_path = os.path.join(TEMP_DIR, f"carta_apresentacao_{phone}.pdf")
@@ -748,6 +781,7 @@ def deliver_final_product(user, test_data=None, debug=False):
     
     update_user(phone, {'state': 'awaiting_interview_prep_choice'})
     send_whatsapp_message(phone, "Seus arquivos foram entregues! 📄✨\n\nComo um bônus final, gostaria que eu gerasse uma lista de possíveis perguntas de entrevista com base no seu currículo? (Responda com *sim* ou *não*)")
+
 
 @handle_state('awaiting_interview_prep_choice')
 def handle_interview_prep(user, message_data):
