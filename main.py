@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-# VERSÃO PRO - COMPLETA E CORRIGIDA (09/07/2025) - FIX DO AttributeError
+# VERSÃO PRO - COMPLETA E TOTALMENTE CORRIGIDA (09/07/2025)
 
 # ==============================================================================
-# --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
+# --- 1. IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
 # ==============================================================================
 import os
 import sqlite3
@@ -21,13 +21,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # ==============================================================================
-# --- INICIALIZAÇÃO E CONFIGURAÇÕES GLOBAIS
+# --- 2. INICIALIZAÇÃO E CONFIGURAÇÕES GLOBAIS
 # ==============================================================================
 app = Flask(__name__)
 BOT_NAME = "Cadu"
 
 # --- NÚMEROS E COMANDOS ---
-DEBUG_PHONE_NUMBERS = ["555195995888", "555199864475"]
 ADMIN_PHONE_NUMBER = "5551994914188"
 PULAR_COMMANDS = ['pular', 'nao', 'não', 'n', 'ignorar', 'não tenho']
 PRONTO_COMMANDS = ['pronto', 'acabei', 'fim', 'só isso', 'finalizar']
@@ -61,7 +60,7 @@ TEMP_DIR = "/tmp"
 if not os.path.exists(TEMP_DIR): os.makedirs(TEMP_DIR)
 
 # ==============================================================================
-# --- BANCO DE DADOS
+# --- 3. FUNÇÕES DE BANCO DE DADOS
 # ==============================================================================
 def init_database():
     conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
@@ -116,7 +115,7 @@ def update_user(phone, data):
     conn.close()
 
 # ==============================================================================
-# --- COMUNICAÇÃO E PROCESSAMENTO ASSÍNCRONO
+# --- 4. COMUNICAÇÃO E PROCESSAMENTO ASSÍNCRONO
 # ==============================================================================
 def send_whatsapp_message(phone, message):
     logging.info(f"Enviando mensagem para {phone}: {message}")
@@ -148,7 +147,7 @@ def run_long_task_in_background(target_func, args=()):
     thread.start()
 
 # ==============================================================================
-# --- FUNÇÕES DE IA
+# --- 5. FUNÇÕES DE IA
 # ==============================================================================
 def get_openai_response(prompt_messages, is_json=False):
     if not openai.api_key: return None
@@ -207,7 +206,7 @@ def generate_interview_questions(resume_data):
     return get_openai_response([{"role": "system", "content": system_prompt.format(cargo=resume_data.get('cargo', ''))}, {"role": "user", "content": user_prompt}])
 
 # ==============================================================================
-# --- GERAÇÃO DE PDF
+# --- 6. GERAÇÃO DE PDF
 # ==============================================================================
 class PDF(FPDF):
     def add_font_setup(self):
@@ -260,18 +259,18 @@ def generate_template_moderno(data, path):
         if isinstance(content, list): content = "\n".join([f"• {item}" for item in content])
         pdf.multi_cell(55, 5, content)
         pdf.ln(5)
-    contact_info = f"{data.get('email', '')}\n{data.get('telefone', '')}\n{data.get('cidade_estado', '')}"
+    contact_info = f"{data.get('email', '')}\n{data.get('telefone') or data.get('phone')}\n{data.get('cidade_estado') or data.get('city_state')}"
     add_sidebar_section("Contato" if lang == 'pt' else "Contact", contact_info)
-    add_sidebar_section("Formação" if lang == 'pt' else "Education", data.get('formacao'))
-    add_sidebar_section("Habilidades" if lang == 'pt' else "Skills", data.get('habilidades'))
+    add_sidebar_section("Formação" if lang == 'pt' else "Education", data.get('formacao') or data.get('education'))
+    add_sidebar_section("Habilidades" if lang == 'pt' else "Skills", data.get('habilidades') or data.get('skills'))
     pdf.set_xy(80, 15)
     pdf.set_text_color(40, 40, 40)
     pdf.set_font(pdf.font_bold, 'B', 26)
-    pdf.multi_cell(120, 11, data.get('nome_completo'))
+    pdf.multi_cell(120, 11, data.get('nome_completo') or data.get('full_name'))
     pdf.set_font(pdf.font_regular, '', 14)
     pdf.set_text_color(108, 122, 137)
     pdf.set_x(80)
-    pdf.cell(0, 8, data.get('cargo'), 0, 1, 'L')
+    pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'L')
     pdf.ln(8)
     def add_right_section(title, content):
         if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
@@ -287,11 +286,11 @@ def generate_template_moderno(data, path):
             if isinstance(content, list) and all(isinstance(i, dict) for i in content):
                 for item in content:
                     pdf.set_x(80); pdf.set_font(pdf.font_bold, 'B', 10)
-                    pdf.multi_cell(120, 6, f"{item.get('cargo', '')} | {item.get('empresa', '')}", 0, 'L')
+                    pdf.multi_cell(120, 6, f"{item.get('cargo', item.get('title', ''))} | {item.get('empresa', item.get('company', ''))}", 0, 'L')
                     pdf.set_font(pdf.font_regular, 'I', 9); pdf.set_x(80)
-                    pdf.cell(0, 6, item.get('periodo', ''), 0, 1)
+                    pdf.cell(0, 6, item.get('periodo', item.get('period', '')), 0, 1)
                     pdf.set_font(pdf.font_regular, '', 10); pdf.set_x(85)
-                    pdf.multi_cell(115, 5, f"• {item.get('descricao', '')}"); pdf.ln(3)
+                    pdf.multi_cell(115, 5, f"• {item.get('descricao', item.get('description', ''))}"); pdf.ln(3)
             elif isinstance(content, list):
                 pdf.set_x(80); pdf.multi_cell(120, 6, "\n".join([f"• {item}" for item in content]))
             else:
@@ -299,18 +298,18 @@ def generate_template_moderno(data, path):
             pdf.ln(4)
     title_map_pt = {"resumo": "Resumo Profissional", "experiencias": "Experiência Profissional", "cursos": "Cursos e Certificações"}
     title_map_en = {"professional_summary": "Professional Summary", "work_experience": "Work Experience", "courses_certifications": "Courses & Certifications"}
-    add_right_section(title_map_pt.get('resumo'), data.get('resumo'))
-    add_right_section(title_map_pt.get('experiencias'), data.get('experiencias'))
-    add_right_section(title_map_pt.get('cursos'), data.get('cursos'))
+    add_right_section(title_map_pt.get('resumo'), data.get('resumo') or data.get('professional_summary'))
+    add_right_section(title_map_pt.get('experiencias'), data.get('experiencias') or data.get('work_experience'))
+    add_right_section(title_map_pt.get('cursos'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
 def generate_template_classico(data, path):
     pdf = PDF()
     pdf.add_font_setup(); pdf.add_page(); pdf.set_auto_page_break(auto=True, margin=15)
     lang = 'en' if 'full_name' in data else 'pt'
-    pdf.set_font(pdf.font_bold, 'B', 24); pdf.cell(0, 12, data.get('nome_completo'), 0, 1, 'C')
+    pdf.set_font(pdf.font_bold, 'B', 24); pdf.cell(0, 12, data.get('nome_completo') or data.get('full_name'), 0, 1, 'C')
     pdf.set_font(pdf.font_regular, '', 11)
-    contato = f"{data.get('email')} | {data.get('telefone')} | {data.get('cidade_estado')}"
+    contato = f"{data.get('email', '')} | {data.get('telefone') or data.get('phone')} | {data.get('cidade_estado') or data.get('city_state')}"
     pdf.cell(0, 8, contato, 0, 1, 'C'); pdf.ln(5); pdf.line(10, pdf.get_y(), 200, pdf.get_y()); pdf.ln(8)
     def add_section(title, content):
         if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
@@ -318,18 +317,19 @@ def generate_template_classico(data, path):
             pdf.set_font(pdf.font_regular, '', 10)
             if isinstance(content, list) and all(isinstance(i, dict) for i in content):
                 for item in content:
-                    pdf.set_font(pdf.font_bold, 'B', 10); pdf.cell(0, 6, f"{item.get('cargo')}, {item.get('empresa')}", 0, 1)
-                    pdf.set_font(pdf.font_regular, 'I', 9); pdf.cell(0, 5, item.get('periodo'), 0, 1)
-                    pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"  • {item.get('descricao')}"); pdf.ln(3)
+                    pdf.set_font(pdf.font_bold, 'B', 10); pdf.cell(0, 6, f"{item.get('cargo', item.get('title', ''))}, {item.get('empresa', item.get('company', ''))}", 0, 1)
+                    pdf.set_font(pdf.font_regular, 'I', 9); pdf.cell(0, 5, item.get('periodo', item.get('period', '')), 0, 1)
+                    pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"  • {item.get('descricao', item.get('description', ''))}"); pdf.ln(3)
             elif isinstance(content, list): pdf.multi_cell(0, 5, "\n".join([f"• {item}" for item in content]))
             else: pdf.multi_cell(0, 5, content)
             pdf.ln(4)
-    title_map = {"resumo": "Resumo", "experiencias": "Experiência Profissional", "formacao": "Formação Acadêmica", "habilidades": "Habilidades", "cursos": "Cursos"}
-    add_section(title_map.get('resumo'), data.get('resumo'))
-    add_section(title_map.get('experiencias'), data.get('experiencias'))
-    add_section(title_map.get('formacao'), data.get('formacao'))
-    add_section(title_map.get('habilidades'), data.get('habilidades'))
-    add_section(title_map.get('cursos'), data.get('cursos'))
+    title_map_pt = {"resumo": "Resumo", "experiencias": "Experiência Profissional", "formacao": "Formação Acadêmica", "habilidades": "Habilidades", "cursos": "Cursos"}
+    title_map_en = {"professional_summary": "Summary", "work_experience": "Work Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses"}
+    add_section(title_map_pt.get('resumo'), data.get('resumo') or data.get('professional_summary'))
+    add_section(title_map_pt.get('experiencias'), data.get('experiencias') or data.get('work_experience'))
+    add_section(title_map_pt.get('formacao'), data.get('formacao') or data.get('education'))
+    add_section(title_map_pt.get('habilidades'), data.get('habilidades') or data.get('skills'))
+    add_section(title_map_pt.get('cursos'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
 def generate_template_criativo(data, path):
@@ -338,8 +338,8 @@ def generate_template_criativo(data, path):
     HEADER_COLOR = (211, 84, 0)
     pdf.set_fill_color(*HEADER_COLOR); pdf.rect(0, 10, 210, 35, 'F')
     pdf.set_y(18); pdf.set_font(pdf.font_bold, 'B', 24); pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 10, data.get('nome_completo'), 0, 1, 'C')
-    pdf.set_font(pdf.font_regular, '', 12); pdf.cell(0, 8, data.get('cargo'), 0, 1, 'C')
+    pdf.cell(0, 10, data.get('nome_completo') or data.get('full_name'), 0, 1, 'C')
+    pdf.set_font(pdf.font_regular, '', 12); pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'C')
     pdf.set_y(55)
     def add_section(title, content):
         if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
@@ -349,22 +349,23 @@ def generate_template_criativo(data, path):
             if isinstance(content, list) and all(isinstance(i, dict) for i in content):
                 for item in content:
                     pdf.set_font(pdf.font_bold, 'B', 10)
-                    pdf.multi_cell(0, 6, f"{item.get('cargo')} | {item.get('empresa')}", 0, 'L')
-                    pdf.set_font(pdf.font_regular, 'I', 9); pdf.cell(0, 6, item.get('periodo'), 0, 1)
-                    pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"• {item.get('descricao')}"); pdf.ln(3)
+                    pdf.multi_cell(0, 6, f"{item.get('cargo', item.get('title', ''))} | {item.get('empresa', item.get('company', ''))}", 0, 'L')
+                    pdf.set_font(pdf.font_regular, 'I', 9); pdf.cell(0, 6, item.get('periodo', item.get('period', '')), 0, 1)
+                    pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"• {item.get('descricao', item.get('description', ''))}"); pdf.ln(3)
             elif isinstance(content, list): pdf.multi_cell(0, 5, "\n".join([f"• {item}" for item in content]))
             else: pdf.multi_cell(0, 5, content)
             pdf.ln(5)
-    title_map = {"resumo": "Sobre Mim", "experiencias": "Experiência", "formacao": "Educação", "habilidades": "Competências", "cursos": "Cursos"}
-    add_section(title_map.get('resumo'), data.get('resumo'))
-    add_section(title_map.get('experiencias'), data.get('experiencias'))
-    add_section(title_map.get('formacao'), data.get('formacao'))
-    add_section(title_map.get('habilidades'), data.get('habilidades'))
-    add_section(title_map.get('cursos'), data.get('cursos'))
+    title_map_pt = {"resumo": "Sobre Mim", "experiencias": "Experiência", "formacao": "Educação", "habilidades": "Competências", "cursos": "Cursos"}
+    title_map_en = {"professional_summary": "About Me", "work_experience": "Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses"}
+    add_section(title_map_pt.get('resumo'), data.get('resumo') or data.get('professional_summary'))
+    add_section(title_map_pt.get('experiencias'), data.get('experiencias') or data.get('work_experience'))
+    add_section(title_map_pt.get('formacao'), data.get('formacao') or data.get('education'))
+    add_section(title_map_pt.get('habilidades'), data.get('habilidades') or data.get('skills'))
+    add_section(title_map_pt.get('cursos'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
 # ==============================================================================
-# --- LÓGICA E FLUXO DA CONVERSA
+# --- 7. LÓGICA E FLUXO DA CONVERSA
 # ==============================================================================
 CONVERSATION_FLOW = [
     ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
@@ -393,12 +394,6 @@ def handle_state(state):
 
 def process_message(phone, message_data):
     text = message_data.get('text', '').lower().strip()
-    if phone in DEBUG_PHONE_NUMBERS and text == 'teste':
-        logging.info(f"MODO DE TESTE ATIVADO MANUALMENTE PARA O NÚMERO: {phone}")
-        send_whatsapp_message(phone, "Modo de teste ativado! Gerando todos os modelos de PDFs de exemplo...")
-        mock_user_data = {'phone': phone, 'plan': 'premium', 'template': 'moderno', 'credits': 99}
-        run_long_task_in_background(target_func=deliver_final_product, args=(mock_user_data, generate_fake_data(), True))
-        return
     user = get_user(phone)
     if not user:
         update_user(phone, {'state': 'awaiting_welcome'})
@@ -468,21 +463,38 @@ def create_flow_handler(current_step_index):
         resume_data = json.loads(user['resume_data'])
         if current_key == 'resumo' and message.lower().strip() in PULAR_COMMANDS:
             extracted_info = "Não informado"
+        elif current_key == 'cursos' and message.lower().strip() in PRONTO_COMMANDS:
+            go_to_next_step(phone, resume_data, current_step_index)
+            return
         elif current_key == 'email':
             extracted_info = extract_info_from_message(current_question, message).lower().strip()
         else:
             extracted_info = extract_info_from_message(current_question, message)
-        resume_data[current_key] = extracted_info
+        
+        # Lógica para listas (habilidades, cursos)
+        if current_key in ['habilidades', 'cursos']:
+            if not resume_data.get(current_key): resume_data[current_key] = []
+            resume_data[current_key].append(extracted_info)
+            if current_key == 'cursos':
+                send_whatsapp_message(phone, 'Curso adicionado. Me diga o próximo ou digite "pronto" para finalizar.')
+                # Não avança para o próximo passo, espera mais cursos ou "pronto"
+                return 
+        else:
+            resume_data[current_key] = extracted_info
+
         update_user(phone, {'resume_data': json.dumps(resume_data)})
         go_to_next_step(phone, resume_data, current_step_index)
 
 def go_to_next_step(phone, resume_data, current_idx):
     user_name = resume_data.get('nome_completo', '').split(' ')[0].capitalize()
-    is_last_personal_info = CONVERSATION_FLOW[current_idx][0] == 'resumo'
-    if is_last_personal_info:
+    
+    current_key = CONVERSATION_FLOW[current_idx][0]
+    
+    if current_key == 'resumo':
         update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
         send_whatsapp_message(phone, f"Ótimo, {user_name}. Agora vamos adicionar suas experiências profissionais, começando pela mais recente. Se não tiver, é só dizer 'pular'. Qual foi seu cargo?")
         return
+        
     if current_idx + 1 < len(CONVERSATION_FLOW):
         next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
         next_question = next_question.format(nome=user_name)
@@ -616,9 +628,7 @@ def deliver_final_product(user_data, test_data=None, debug=False):
             if user_data.get('credits', 0) < 1:
                 send_whatsapp_message(phone, "Você não tem mais créditos. Digite 'oi' para ver os planos.")
                 update_user(phone, {'state': 'awaiting_welcome'}); return
-            new_credits = user_data.get('credits', 1) - 1
-            update_user(phone, {'credits': new_credits})
-            send_whatsapp_message(phone, f"Preparando seu currículo... (Créditos restantes: {new_credits})")
+            send_whatsapp_message(phone, f"Preparando seu currículo...")
         else:
              send_whatsapp_message(phone, "Preparando seu currículo...")
         template = user_data['template']
@@ -638,6 +648,13 @@ def deliver_final_product(user_data, test_data=None, debug=False):
             send_whatsapp_document(ADMIN_PHONE_NUMBER, pdf_path, f"REVISAR_{os.path.basename(pdf_path)}")
             send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
         os.remove(pdf_path)
+        
+        # Debita o crédito APÓS o sucesso do envio
+        if plan != 'assinatura' and not debug:
+            new_credits = user_data.get('credits', 1) - 1
+            update_user(phone, {'credits': new_credits})
+            send_whatsapp_message(phone, f"Crédito utilizado! Você ainda tem {new_credits} crédito(s).")
+            
         update_user(phone, {'state': 'awaiting_interview_prep_choice'})
         send_whatsapp_message(phone, "Seus arquivos foram entregues! 📄✨\n\nComo um bônus final, gostaria de gerar uma lista de perguntas de entrevista com base no seu currículo? (Responda com *sim* ou *não*)")
 
@@ -680,7 +697,7 @@ def handle_default(user, message_data=None):
     show_payment_options(phone)
 
 # ==============================================================================
-# --- WEBHOOK e INICIALIZAÇÃO
+# --- 8. WEBHOOK e INICIALIZAÇÃO
 # ==============================================================================
 @app.route('/')
 def health_check():
@@ -724,6 +741,7 @@ def check_abandoned_sessions():
         conn.close()
 
 init_database()
+
 if __name__ == '__main__':
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(check_abandoned_sessions, 'interval', hours=6)
