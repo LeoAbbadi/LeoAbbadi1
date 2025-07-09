@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO PRO - COMPLETA E TOTALMENTE CORRIGIDA (09/07/2025) - FIX DE NameError v3
+# VERSÃO PRO - OTIMIZADA E INTELIGENTE (09/07/2025) - FIX DE FORMATAÇÃO E EXTRAÇÃO
 
 # ==============================================================================
 # --- 1. IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -9,7 +9,6 @@ import sqlite3
 import json
 import base64
 import logging
-import random
 import threading
 from datetime import datetime, timedelta
 import requests
@@ -94,7 +93,7 @@ def update_user(phone, data):
     cursor = conn.cursor()
     if not user:
         initial_data = {
-            'phone': phone, 'state': 'awaiting_welcome', 'resume_data': json.dumps({}),
+            'phone': phone, 'state': 'awaiting_welcome', 'resume_data': json.dumps({'cargo': ''}),
             'plan': 'none', 'template': 'none', 'payment_verified': 0,
             'last_interaction': datetime.now(), 'current_experience': json.dumps({}),
             'payment_timestamp': None, 'credits': 0, 'subscription_valid_until': None,
@@ -147,14 +146,14 @@ def run_long_task_in_background(target_func, args=()):
     thread.start()
 
 # ==============================================================================
-# --- 5. FUNÇÕES DE IA
+# --- 5. FUNÇÕES DE IA E FORMATAÇÃO (SEÇÃO OTIMIZADA)
 # ==============================================================================
 def get_openai_response(prompt_messages, is_json=False):
     if not openai.api_key: return None
     try:
         model_to_use = "gpt-4o"
         response_format = {"type": "json_object"} if is_json else {"type": "text"}
-        completion = openai.chat.completions.create(model=model_to_use, messages=prompt_messages, temperature=0.7, response_format=response_format)
+        completion = openai.chat.completions.create(model=model_to_use, messages=prompt_messages, temperature=0.5, response_format=response_format)
         response_content = completion.choices[0].message.content.strip()
         if is_json:
             try: json.loads(response_content)
@@ -166,13 +165,40 @@ def get_openai_response(prompt_messages, is_json=False):
         logging.error(f"Erro na API da OpenAI: {e}")
         return None
 
-def extract_info_from_message(question, user_message):
-    system_prompt = "Você é um assistente que extrai a informação principal da resposta de um usuário, sem frases extras. Ex: se a pergunta é 'Qual seu nome?' e a resposta é 'meu nome é joão da silva', extraia 'joão da silva'. Se a resposta for 'não quero informar', extraia 'Não informado'."
-    user_prompt = f'Pergunta: "{question}"\nResposta: "{user_message}"\n\nInformação extraída:'
-    return get_openai_response([{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]) or user_message
+def format_text(field_key, text):
+    """Aplica formatação padronizada para diferentes tipos de campos."""
+    if not isinstance(text, str): return text
+    text = text.strip()
+    if field_key in ['nome_completo', 'empresa', 'cargo', 'formacao', 'cidade_estado']:
+        return text.title()
+    elif field_key == 'email':
+        return text.lower()
+    elif field_key in ['resumo', 'descricao'] and text:
+        return text[0].upper() + text[1:]
+    return text
+
+def extract_and_format_info(field_key, question, user_message):
+    """Usa IA para extrair informação de forma inteligente e depois a formata."""
+    system_prompt = "Você é um assistente que extrai a informação principal da resposta de um usuário, de forma limpa e direta, sem saudações ou frases adicionais. Apenas a informação pura."
+    user_prompt_template = 'Pergunta: "{question}"\nResposta do usuário: "{user_message}"\n\nExtraia a informação relevante:'
+
+    if field_key == 'periodo':
+        system_prompt = "Você é um assistente que extrai um período de tempo da resposta de um usuário. Formate a resposta como 'Mês de Ano - Mês de Ano' ou 'Ano - Ano'. Ignore palavras como 'fiquei de', 'trabalhei entre'. Exemplo: se o usuário diz 'fevereiro de 2023 até janeiro 2025', extraia 'Fevereiro de 2023 - Janeiro de 2025'."
+    elif field_key == 'nome_completo':
+        system_prompt = "Você é um assistente que extrai um nome completo de pessoa. Corrija a capitalização se necessário (ex: 'joão da silva' -> 'João da Silva'). Retorne apenas o nome."
+
+    user_prompt = user_prompt_template.format(question=question, user_message=user_message)
+    
+    extracted_info = get_openai_response([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]) or user_message
+
+    return format_text(field_key, extracted_info)
+
 
 def analyze_pix_receipt(image_url):
-    system_prompt = f'Analise a imagem de um comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}". Responda APENAS com um objeto JSON com as chaves "verified" (true/false). Não inclua a formatação markdown ```json```.'
+    system_prompt = f'Analise a imagem de um comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}". Responda APENAS com um objeto JSON com a chave "verified" (true/false). Não inclua a formatação markdown ```json```.'
     messages = [{"role": "user", "content": [{"type": "text", "text": system_prompt}, {"type": "image_url", "image_url": {"url": image_url}}]}]
     json_response_str = get_openai_response(messages, is_json=True)
     if json_response_str: return json.loads(json_response_str)
@@ -206,7 +232,7 @@ def generate_interview_questions(resume_data):
     return get_openai_response([{"role": "system", "content": system_prompt.format(cargo=resume_data.get('cargo', ''))}, {"role": "user", "content": user_prompt}])
 
 # ==============================================================================
-# --- 6. GERAÇÃO DE PDF
+# --- 6. GERAÇÃO DE PDF (SEÇÃO OTIMIZADA)
 # ==============================================================================
 class PDF(FPDF):
     def add_font_setup(self):
@@ -285,7 +311,7 @@ def generate_template_classico(data, path):
     lang = 'en' if 'full_name' in data else 'pt'
     pdf.set_font(pdf.font_bold, 'B', 24); pdf.cell(0, 12, data.get('nome_completo') or data.get('full_name'), 0, 1, 'C')
     pdf.set_font(pdf.font_regular, '', 11)
-    contato = f"{data.get('email', '')} | {data.get('telefone') or data.get('phone')} | {data.get('cidade_estado') or data.get('city_state')}"
+    contato = f"{data.get('cidade_estado') or data.get('city_state')} | {data.get('telefone') or data.get('phone')} | {data.get('email', '')}"
     pdf.cell(0, 8, contato, 0, 1, 'C'); pdf.ln(5); pdf.line(10, pdf.get_y(), 200, pdf.get_y()); pdf.ln(8)
     def add_section(title, content):
         if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
@@ -312,12 +338,17 @@ def generate_template_criativo(data, path):
     pdf = PDF()
     pdf.add_font_setup(); pdf.add_page(); pdf.set_auto_page_break(auto=True, margin=15)
     HEADER_COLOR = (211, 84, 0)
-    pdf.set_fill_color(*HEADER_COLOR); pdf.rect(0, 10, 210, 35, 'F')
-    pdf.set_y(18); pdf.set_font(pdf.font_bold, 'B', 24); pdf.set_text_color(255, 255, 255)
+    pdf.set_fill_color(*HEADER_COLOR); pdf.rect(0, 10, 210, 40, 'F')
+    pdf.set_y(15)
+    pdf.set_font(pdf.font_bold, 'B', 24); pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 10, data.get('nome_completo') or data.get('full_name'), 0, 1, 'C')
     pdf.set_font(pdf.font_regular, '', 12); pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'C')
-    pdf.set_y(55)
+    pdf.set_font(pdf.font_regular, '', 9); pdf.set_text_color(220, 220, 220)
+    contato = f"{data.get('cidade_estado', '')} | {data.get('telefone', '')} | {data.get('email', '')}"
+    pdf.cell(0, 6, contato, 0, 1, 'C')
+    pdf.set_y(60)
     def add_section(title, content):
+        pdf.set_text_color(50, 50, 50)
         if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
             pdf.set_font(pdf.font_bold, 'B', 12); pdf.set_text_color(*HEADER_COLOR)
             pdf.cell(0, 12, title.upper(), 0, 1, 'L')
@@ -341,14 +372,13 @@ def generate_template_criativo(data, path):
     pdf.output(path)
 
 # ==============================================================================
-# --- 7. LÓGICA E FLUXO DA CONVERSA
+# --- 7. LÓGICA E FLUXO DA CONVERSA (SEÇÃO OTIMIZADA)
 # ==============================================================================
 CONVERSATION_FLOW = [
     ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
     ('cidade_estado', 'Ótimo, {nome}! Agora me diga em qual cidade e estado você mora.'),
     ('telefone', 'Pode me informar um telefone de contato com DDD?'),
     ('email', 'Qual o seu melhor e-mail para contato?'),
-    ('cargo', 'Certo, {nome}. Qual o cargo ou área que você está buscando?'),
     ('resumo', 'Vamos caprichar! Escreva um pequeno resumo sobre você e seus objetivos. (Se não tiver, é só dizer "pular").'),
     ('formacao', 'Qual a sua formação? (Ex: Ensino Médio Completo, Graduação em Administração)'),
     ('habilidades', 'Quais são suas principais habilidades, {nome}? (Ex: Comunicação, Pacote Office). Pode listar várias, separando por vírgula.'),
@@ -356,7 +386,7 @@ CONVERSATION_FLOW = [
 ]
 REVIEW_KEY_MAP = {
     'nome_completo': 'Nome', 'cidade_estado': 'Cidade/Estado', 'telefone': 'Telefone',
-    'email': 'E-mail', 'cargo': 'Cargo Desejado', 'resumo': 'Resumo',
+    'email': 'E-mail', 'cargo': 'Cargo Principal', 'resumo': 'Resumo',
     'experiencias': 'Experiências', 'formacao': 'Formação', 'habilidades': 'Habilidades', 'cursos': 'Cursos'
 }
 REVIEW_ORDER = ['nome_completo', 'cidade_estado', 'telefone', 'email', 'cargo', 'resumo', 'formacao', 'habilidades', 'cursos', 'experiencias']
@@ -403,13 +433,17 @@ def show_review_menu(phone, resume_data):
         label = REVIEW_KEY_MAP.get(key, key.replace('_', ' ').capitalize())
         
         display_value = value
+        if key == 'experiencias':
+            review_text += f"*{i+1}. {label}:*\n"
+            if isinstance(value, list) and value:
+                for exp in value:
+                    review_text += f"  - {exp.get('cargo', '')} em {exp.get('empresa', '')}\n"
+            else:
+                review_text += "  Nenhum item adicionado\n"
+            continue
+            
         if isinstance(value, list):
-            if not value:
-                display_value = "Nenhum item adicionado"
-            elif all(isinstance(item, dict) for item in value): # Para experiências
-                display_value = "\n".join([f"- {v.get('cargo', '')} em {v.get('empresa', '')}" for v in value])
-            else: # Para habilidades, cursos
-                display_value = ", ".join(map(str, value))
+            display_value = ", ".join(map(str, value)) if value else "Nenhum item adicionado"
         
         if isinstance(display_value, str) and len(display_value) > 100:
             display_value = display_value[:100] + "..."
@@ -471,27 +505,29 @@ def create_flow_handler(current_step_index):
     current_key, current_question = CONVERSATION_FLOW[current_step_index]
     @handle_state(f'flow_{current_key}')
     def flow_handler(user, message_data):
-        phone, message = user['phone'], message_data.get('text', '').lower().strip()
+        phone, message = user['phone'], message_data.get('text', '')
         resume_data = json.loads(user['resume_data'])
-        if current_key == 'resumo' and message in PULAR_COMMANDS:
+        
+        if message.lower().strip() in PULAR_COMMANDS and current_key == 'resumo':
             extracted_info = "Não informado"
-        elif current_key == 'cursos' and message in PRONTO_COMMANDS:
+        elif message.lower().strip() in PRONTO_COMMANDS and current_key == 'cursos':
             go_to_next_step(phone, resume_data, current_step_index)
             return
-        elif current_key == 'email':
-            extracted_info = extract_info_from_message(current_question, message).lower().strip()
         else:
-            extracted_info = extract_info_from_message(current_question, message)
+            extracted_info = extract_and_format_info(current_key, current_question, message)
         
         if current_key in ['habilidades', 'cursos']:
             if not resume_data.get(current_key): resume_data[current_key] = []
-            if current_key == 'habilidades': resume_data[current_key].extend([h.strip() for h in extracted_info.split(',')])
-            else: resume_data[current_key].append(extracted_info)
+            if current_key == 'habilidades':
+                resume_data[current_key].extend([format_text(current_key, h) for h in extracted_info.split(',')])
+            else:
+                resume_data[current_key].append(extracted_info)
             if current_key == 'cursos':
                 send_whatsapp_message(phone, 'Curso adicionado. Me diga o próximo ou digite "pronto" para finalizar.')
                 update_user(phone, {'resume_data': json.dumps(resume_data)}); return
         else:
             resume_data[current_key] = extracted_info
+            
         update_user(phone, {'resume_data': json.dumps(resume_data)})
         go_to_next_step(phone, resume_data, current_step_index)
 
@@ -499,37 +535,48 @@ for i in range(len(CONVERSATION_FLOW)): create_flow_handler(i)
 
 @handle_state('awaiting_experience_job_title')
 def handle_exp_job_title(user, message_data):
-    phone, message = user['phone'], message_data.get('text', '').lower().strip()
-    if message in PULAR_COMMANDS:
+    phone, message = user['phone'], message_data.get('text', '')
+    if message.lower().strip() in PULAR_COMMANDS:
         show_review_menu(phone, json.loads(user['resume_data'])); return
-    current_experience = {'cargo': message}
+    
+    cargo = format_text('cargo', message)
+    current_experience = {'cargo': cargo}
     update_user(phone, {'state': 'awaiting_experience_company', 'current_experience': json.dumps(current_experience)})
     send_whatsapp_message(phone, "Entendido. E o nome da empresa?")
 
 @handle_state('awaiting_experience_company')
 def handle_exp_company(user, message_data):
     phone, message = user['phone'], message_data.get('text', '')
+    empresa = format_text('empresa', message)
     current_experience = json.loads(user['current_experience'])
-    current_experience['empresa'] = message
+    current_experience['empresa'] = empresa
     update_user(phone, {'state': 'awaiting_experience_period', 'current_experience': json.dumps(current_experience)})
-    send_whatsapp_message(phone, "Anotado. Qual foi o período? (Ex: 2020 - 2022)")
+    send_whatsapp_message(phone, "Anotado. Qual foi o período? (Ex: 2020 - 2022 ou Jan 2021 - Dez 2022)")
 
 @handle_state('awaiting_experience_period')
 def handle_exp_period(user, message_data):
     phone, message = user['phone'], message_data.get('text', '')
+    periodo = extract_and_format_info('periodo', "Qual foi o período?", message)
     current_experience = json.loads(user['current_experience'])
-    current_experience['periodo'] = message
+    current_experience['periodo'] = periodo
     update_user(phone, {'state': 'awaiting_experience_description', 'current_experience': json.dumps(current_experience)})
     send_whatsapp_message(phone, "Ok. Agora descreva brevemente suas responsabilidades e conquistas nesse cargo.")
 
 @handle_state('awaiting_experience_description')
 def handle_exp_description(user, message_data):
     phone, message = user['phone'], message_data.get('text', '')
+    descricao = format_text('descricao', message)
     current_experience = json.loads(user['current_experience'])
-    current_experience['descricao'] = message
+    current_experience['descricao'] = descricao
     resume_data = json.loads(user['resume_data'])
+    
     if 'experiencias' not in resume_data or not isinstance(resume_data['experiencias'], list): resume_data['experiencias'] = []
-    resume_data['experiencias'].append(current_experience)
+    resume_data['experiencias'].insert(0, current_experience) # Adiciona no início
+    
+    if not resume_data.get('cargo'):
+        resume_data['cargo'] = current_experience.get('cargo')
+        logging.info(f"Cargo principal definido como: {resume_data['cargo']}")
+
     update_user(phone, {'state': 'awaiting_another_experience', 'resume_data': json.dumps(resume_data)})
     send_whatsapp_message(phone, "Experiência adicionada! Deseja adicionar outra? (Responda com *sim* ou *não*)")
 
@@ -547,7 +594,7 @@ def handle_another_experience(user, message_data):
 def handle_improve_choice(user, message_data):
     phone, choice = user['phone'], message_data.get('text', '').lower().strip()
     resume_data = json.loads(user['resume_data'])
-    if choice == 'sim':
+    if choice == 'sim' and resume_data.get('experiencias'):
         send_whatsapp_message(phone, "Excelente! Deixa comigo, estou otimizando seus textos... ✍️ Isso pode levar um instante.")
         improved_experiences = improve_experience_descriptions(resume_data.get('experiencias', []))
         if improved_experiences: resume_data['experiencias'] = improved_experiences
@@ -584,9 +631,12 @@ def handle_correction_input(user, message_data):
     phone, message, field_to_edit = user['phone'], message_data.get('text', ''), user['editing_field']
     if not field_to_edit:
         handle_default(user, message_data); return
+    
     resume_data = json.loads(user['resume_data'])
-    resume_data[field_to_edit] = message
-    update_user(phone, {'resume_data': json.dumps(resume_data)})
+    # Usa a mesma função de formatação para a correção
+    resume_data[field_to_edit] = format_text(field_to_edit, message)
+    update_user(phone, {'resume_data': json.dumps(resume_data), 'editing_field': None, 'state': 'awaiting_review_choice'})
+    # Mostra o menu de revisão atualizado
     show_review_menu(phone, resume_data)
 
 @handle_state('awaiting_payment_proof')
@@ -635,14 +685,14 @@ def handle_default(user, message_data=None):
             if datetime.now() < valid_until:
                 days_left = (valid_until - datetime.now()).days
                 send_whatsapp_message(phone, f"Olá de novo! Sua assinatura está ativa por mais {days_left} dias. 👍\nVamos criar uma nova versão do seu currículo.")
-                update_user(phone, {'state': 'choosing_template', 'resume_data': json.dumps({})})
+                update_user(phone, {'state': 'choosing_template', 'resume_data': json.dumps({'cargo': ''})})
                 send_whatsapp_message(phone, "Qual dos 3 templates você gostaria de usar desta vez?")
                 return
         except (TypeError, ValueError):
             logging.error(f"Timestamp inválido para assinante {phone}")
     
     update_user(phone, {
-        'state': 'awaiting_welcome', 'resume_data': json.dumps({}), 'plan': 'none', 
+        'state': 'awaiting_welcome', 'resume_data': json.dumps({'cargo': ''}), 'plan': 'none', 
         'template': 'none', 'payment_verified': 0, 'payment_timestamp': None, 
         'credits': 0, 'subscription_valid_until': None, 'current_experience': json.dumps({}), 'editing_field': None
     })
@@ -689,23 +739,15 @@ def deliver_final_product(user_data, test_data=None, debug=False):
 # ==============================================================================
 # --- 8. WEBHOOK E INICIALIZAÇÃO
 # ==============================================================================
-
 def process_message(phone, message_data):
-    """
-    Processa a mensagem recebida, busca o usuário e direciona para o handler de estado correto.
-    Esta é a função principal que estava faltando.
-    """
     message_text = message_data.get('text', '').lower().strip()
     user = get_user(phone)
 
-    # Cria um novo usuário se ele não existir ou se a conversa for reiniciada com um comando
     if not user or message_text in REINICIAR_COMMANDS:
-        # Passa um dicionário com o telefone para handle_default caso o usuário seja novo
         user_info = user if user else {'phone': phone}
         handle_default(user_info, message_data)
         return
 
-    # Se o usuário existe, encontra o handler de estado apropriado para a situação atual
     state = user['state']
     handler = state_handlers.get(state)
 
@@ -713,7 +755,6 @@ def process_message(phone, message_data):
         logging.info(f"Direcionando usuário {phone} (estado: {state}) para o handler: {handler.__name__}")
         handler(user, message_data)
     else:
-        # Fallback para o caso de um estado inválido ou não mapeado
         logging.warning(f"Nenhum handler encontrado para o estado '{state}' do usuário {phone}. Redirecionando para o default.")
         handle_default(user, message_data)
 
@@ -727,7 +768,6 @@ def webhook():
         data = request.json
         logging.info(f"Webhook recebido: {json.dumps(data, indent=2)}")
         
-        # Normaliza a extração de dados do webhook
         phone = data.get('phone')
         message_data = {}
         if data.get('text') and isinstance(data['text'], dict) and 'message' in data['text']:
@@ -736,20 +776,16 @@ def webhook():
              message_data['text'] = data['text']
         elif data.get('type') == 'image' and data.get('imageUrl'):
              message_data['image'] = {'url': data['imageUrl']}
-        # Adicionei esta verificação extra do log
         elif 'image' in data and isinstance(data.get('image'), dict) and 'imageUrl' in data['image']:
              message_data['image'] = {'url': data['image']['imageUrl']}
 
-        # Verifica se temos um número e uma mensagem/imagem para processar
         if phone and message_data:
-            # Chama a função que agora existe!
             process_message(phone, message_data)
         else:
             logging.warning(f"Webhook de {phone} recebido sem dados de mensagem válidos.")
             
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
-        # Usar exc_info=True para logar o traceback completo do erro
         logging.error(f"Erro crítico no webhook: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
