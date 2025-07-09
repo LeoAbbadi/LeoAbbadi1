@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO FINAL - NÍVEL OSCAR (09/07/2025) - FORMATAÇÃO, IA E TEMPLATES APRIMORADOS
+# VERSÃO FINAL CORRIGIDA (09/07/2025) - TEMPLATES RESTAURADOS E BUGS ELIMINADOS
 
 # ==============================================================================
 # --- 1. IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -146,7 +146,7 @@ def run_long_task_in_background(target_func, args=()):
     thread.start()
 
 # ==============================================================================
-# --- 5. FUNÇÕES DE IA E FORMATAÇÃO (VERSÃO OSCAR)
+# --- 5. FUNÇÕES DE IA E FORMATAÇÃO
 # ==============================================================================
 def get_openai_response(prompt_messages, is_json=False):
     if not openai.api_key: return None
@@ -165,20 +165,6 @@ def get_openai_response(prompt_messages, is_json=False):
         logging.error(f"Erro na API da OpenAI: {e}")
         return None
 
-def format_text(field_key, text):
-    """Aplica formatação padronizada para diferentes tipos de campos."""
-    if not isinstance(text, str): return text
-    text = text.strip()
-    if field_key in ['nome_completo', 'empresa', 'cargo', 'formacao', 'cidade_estado']:
-        # O próprio prompt da IA já cuidará da capitalização inteligente
-        return text
-    elif field_key == 'email':
-        return text.lower()
-    elif field_key in ['resumo', 'descricao'] and text:
-        # A IA também cuidará da gramática, então apenas retornamos
-        return text
-    return text
-
 def extract_and_format_info(field_key, question, user_message):
     """Usa IA para extrair informação de forma inteligente e depois a formata."""
     system_prompt = "Você é um assistente que extrai a informação principal da resposta de um usuário, de forma limpa e direta, sem saudações ou frases adicionais. Apenas a informação pura."
@@ -188,9 +174,9 @@ def extract_and_format_info(field_key, question, user_message):
         system_prompt = "Você é um assistente que extrai um período de tempo da resposta de um usuário. Formate a resposta como 'Mês de Ano - Mês de Ano' ou 'Ano - Ano'. Ignore palavras como 'fiquei de', 'trabalhei entre'. Exemplo: se o usuário diz 'fevereiro de 2023 até janeiro 2025', extraia 'Fevereiro de 2023 - Janeiro de 2025'."
     elif field_key == 'nome_completo':
         system_prompt = "Você é um assistente que extrai um nome completo de pessoa. Corrija a capitalização de forma inteligente (ex: 'joão da silva' -> 'João da Silva'). Preste atenção em conectivos como 'de' e 'da', mantendo-os em minúsculo. Retorne apenas o nome."
-    elif field_key == 'resumo' or field_key == 'descricao':
+    elif field_key in ['resumo', 'descricao']:
         system_prompt = "Você é um assistente que analisa a resposta de um usuário. Mantenha o tom original, mas corrija erros de digitação e gramática de forma sutil para garantir profissionalismo. Retorne apenas o texto corrigido."
-        
+    
     user_prompt = user_prompt_template.format(question=question, user_message=user_message)
     
     extracted_info = get_openai_response([
@@ -198,7 +184,7 @@ def extract_and_format_info(field_key, question, user_message):
         {"role": "user", "content": user_prompt}
     ]) or user_message
 
-    return format_text(field_key, extracted_info)
+    return extracted_info.strip()
 
 def analyze_pix_receipt(image_url):
     system_prompt = f'Analise a imagem de um comprovante PIX. Verifique se o nome do recebedor é "{PIX_RECIPIENT_NAME}". Responda APENAS com um objeto JSON com a chave "verified" (true/false). Não inclua a formatação markdown ```json```.'
@@ -208,12 +194,14 @@ def analyze_pix_receipt(image_url):
     return {'verified': False}
 
 def translate_resume_data_to_english(resume_data):
-    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Traduza tanto as chaves (keys) quanto os valores (values) para o inglês. Use estas chaves em inglês: 'full_name', 'city_state', 'phone', 'email', 'desired_role', 'professional_summary', 'work_experience', 'education', 'skills', 'courses_certifications'. O valor de 'work_experience' e 'courses_certifications' devem ser uma lista de dicionários, traduza o conteúdo dentro deles também."
+    system_prompt = "Você é um tradutor especialista em currículos. Traduza o seguinte JSON de dados de um currículo do português para o inglês profissional. Traduza tanto as chaves (keys) quanto os valores (values) para o inglês. Use estas chaves em inglês: 'full_name', 'city_state', 'phone', 'email', 'cargo' (para 'desired_role'), 'resumo' (para 'professional_summary'), 'experiencias' (para 'work_experience'), 'formacao' (para 'education'), 'habilidades' (para 'skills'), 'cursos' (para 'courses_certifications'). O valor de 'work_experience' deve ser uma lista de dicionários, traduza o conteúdo dentro deles também (cargo, empresa, periodo, descricao). Retorne APENAS o JSON traduzido."
     messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": json.dumps(resume_data, ensure_ascii=False)}]
     translated_json_str = get_openai_response(messages, is_json=True)
     if translated_json_str:
         try: return json.loads(translated_json_str)
-        except json.JSONDecodeError: return None
+        except json.JSONDecodeError as e:
+            logging.error(f"Erro ao decodificar JSON traduzido: {e}\nJSON: {translated_json_str}")
+            return None
     return None
 
 def improve_experience_descriptions(experiences):
@@ -235,16 +223,14 @@ def generate_interview_questions(resume_data):
     return get_openai_response([{"role": "system", "content": system_prompt.format(cargo=resume_data.get('cargo', ''))}, {"role": "user", "content": user_prompt}])
 
 # ==============================================================================
-# --- 6. GERAÇÃO DE PDF (VERSÃO OSCAR)
+# --- 6. GERAÇÃO DE PDF (VERSÃO FINAL)
 # ==============================================================================
 class PDF(FPDF):
     def add_font_setup(self):
         try:
-            # Garante que a pasta de fontes exista
             if not os.path.exists(FONT_DIR):
                 os.makedirs(FONT_DIR)
                 logging.warning(f"Pasta de fontes não encontrada, criada em {FONT_DIR}.")
-            # Fontes DejaVu são essenciais para suportar ícones e caracteres especiais
             font_paths = {
                 'DejaVu': os.path.join(FONT_DIR, 'DejaVuSans.ttf'),
                 'DejaVuB': os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf'),
@@ -252,7 +238,7 @@ class PDF(FPDF):
                 'DejaVuBI': os.path.join(FONT_DIR, 'DejaVuSans-BoldOblique.ttf'),
             }
             for name, path in font_paths.items():
-                if not os.path.isfile(path): raise RuntimeError(f"Arquivo de fonte não encontrado: {path}. Faça o download da família de fontes 'DejaVu' e coloque os arquivos na pasta 'fonts'.")
+                if not os.path.isfile(path): raise RuntimeError(f"Arquivo de fonte não encontrado: {path}.")
             
             self.add_font('DejaVu', '', font_paths['DejaVu'], uni=True)
             self.add_font('DejaVu', 'B', font_paths['DejaVuB'], uni=True)
@@ -261,7 +247,7 @@ class PDF(FPDF):
             self.font_regular = 'DejaVu'
             self.font_bold = 'DejaVu'
         except Exception as e:
-            logging.error(f"ERRO CRÍTICO DE FONTE: {e}. Usando 'Helvetica' como alternativa, mas pode haver problemas de codificação.")
+            logging.error(f"ERRO CRÍTICO DE FONTE: {e}. Usando 'Helvetica' como alternativa.")
             self.font_regular = 'Helvetica'
             self.font_bold = 'Helvetica'
         self.set_font(self.font_regular, '', 10)
@@ -271,169 +257,143 @@ def generate_resume_pdf(data, template_choice, path):
     pdf_function = templates.get(template_choice, generate_template_moderno)
     pdf_function(data, path)
 
+# --- TEMPLATES INDIVIDUAIS ---
+
 def generate_template_moderno(data, path):
     pdf = PDF()
     pdf.add_font_setup(); pdf.add_page(); pdf.set_auto_page_break(auto=True, margin=15)
     SIDEBAR_COLOR, ACCENT_COLOR = (45, 52, 54), (26, 188, 156)
     lang = 'en' if 'full_name' in data else 'pt'
 
-    # --- Barra Lateral ---
     pdf.set_fill_color(*SIDEBAR_COLOR); pdf.rect(0, 0, 70, 297, 'F')
     pdf.set_xy(10, 20); pdf.set_text_color(255, 255, 255)
     
-    def add_sidebar_section(title, content_list, icon=''):
+    def add_sidebar_section(title, content_list):
         if not content_list: return
-        pdf.set_x(10); pdf.set_font(pdf.font_bold, 'B', 11); pdf.cell(55, 10, f"{icon} {title.upper()}", 0, 1)
+        pdf.set_x(10); pdf.set_font(pdf.font_bold, 'B', 11); pdf.cell(55, 10, title.upper(), 0, 1)
         pdf.set_font(pdf.font_regular, '', 9)
         for item in content_list:
-            pdf.set_x(12); pdf.multi_cell(55, 5, f"• {item}", 0, 'L')
+            if item: pdf.set_x(12); pdf.multi_cell(55, 5, f"• {item}", 0, 'L')
         pdf.ln(5)
 
     contact_list = [
-        f"📍 {data.get('cidade_estado') or data.get('city_state', '')}",
-        f"📞 {data.get('telefone') or data.get('phone', '')}",
-        f"✉️ {data.get('email', '')}"
+        data.get('cidade_estado') or data.get('city_state', ''),
+        data.get('telefone') or data.get('phone', ''),
+        data.get('email', '')
     ]
-    add_sidebar_section("Contato" if lang == 'pt' else "Contact", [item for item in contact_list if item.split(' ')[-1]])
-    add_sidebar_section("Formação" if lang == 'pt' else "Education", [data.get('formacao') or data.get('education')])
+    add_sidebar_section("Contato" if lang == 'pt' else "Contact", [item for item in contact_list if item])
+    add_sidebar_section("Formação" if lang == 'pt' else "Education", [data.get('formacao')] if data.get('formacao') else [data.get('education')])
     add_sidebar_section("Habilidades" if lang == 'pt' else "Skills", data.get('habilidades') or data.get('skills'))
     add_sidebar_section("Cursos", data.get('cursos') or data.get('courses_certifications'))
 
-    # --- Conteúdo Principal ---
     pdf.set_xy(80, 20); pdf.set_text_color(40, 40, 40)
     pdf.set_font(pdf.font_bold, 'B', 28); pdf.multi_cell(120, 11, data.get('nome_completo') or data.get('full_name'))
     pdf.set_font(pdf.font_regular, '', 14); pdf.set_text_color(108, 122, 137); pdf.set_x(80)
     pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'L'); pdf.ln(10)
 
     def add_right_section(title, content):
-        if not content or (isinstance(content, str) and ( 'pular' in content.lower() or 'não informado' in content.lower())): return
+        if not content: return
         pdf.set_x(80); pdf.set_font(pdf.font_bold, 'B', 12); pdf.set_text_color(40, 40, 40)
         pdf.cell(0, 8, title.upper(), 0, 1, 'L'); pdf.set_draw_color(*ACCENT_COLOR); pdf.line(80, pdf.get_y(), 130, pdf.get_y()); pdf.ln(5)
         pdf.set_font(pdf.font_regular, '', 10); pdf.set_text_color(80, 80, 80)
         
-        if isinstance(content, list) and all(isinstance(i, dict) for i in content): # Experiências
+        if isinstance(content, list):
             for item in content:
                 pdf.set_x(80); pdf.set_font(pdf.font_bold, 'B', 10); pdf.multi_cell(120, 6, f"{item.get('cargo', '')} | {item.get('empresa', '')}", 0, 'L')
-                pdf.set_font(pdf.font_regular, 'I', 9); pdf.set_x(80); pdf.multi_cell(120, 5, item.get('periodo', ''), 0, 'L')
-                pdf.set_font(pdf.font_regular, '', 10); pdf.set_x(83)
-                pdf.multi_cell(115, 5, f"• {item.get('descricao', '')}"); pdf.ln(4)
-        else: # Resumo
+                pdf.set_x(80); pdf.set_font(pdf.font_regular, 'I', 9); pdf.multi_cell(120, 5, item.get('periodo', ''), 0, 'L'); pdf.ln(1)
+                pdf.set_x(83); pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(115, 5, f"• {item.get('descricao', '')}"); pdf.ln(4)
+        else:
             pdf.set_x(80); pdf.multi_cell(120, 6, content)
         pdf.ln(6)
 
-    title_map_pt = {"resumo": "Resumo Profissional", "experiencias": "Experiência Profissional"}
-    title_map_en = {"professional_summary": "Professional Summary", "work_experience": "Work Experience"}
-    add_right_section(title_map_pt.get('resumo'), data.get('resumo') or data.get('professional_summary'))
-    add_right_section(title_map_pt.get('experiencias'), data.get('experiencias') or data.get('work_experience'))
+    title_map = {"resumo": "Resumo Profissional", "experiencias": "Experiência Profissional"} if lang == 'pt' else {"professional_summary": "Professional Summary", "work_experience": "Work Experience"}
+    add_right_section(title_map.get('resumo', 'Resumo'), data.get('resumo') or data.get('professional_summary'))
+    add_right_section(title_map.get('experiencias', 'Experiências'), data.get('experiencias') or data.get('work_experience'))
     pdf.output(path)
 
 def generate_template_classico(data, path):
     pdf = PDF()
     pdf.add_font_setup(); pdf.add_page(); pdf.set_auto_page_break(auto=True, margin=15)
     lang = 'en' if 'full_name' in data else 'pt'
-
-    # --- Cabeçalho ---
+    
     pdf.set_font(pdf.font_bold, 'B', 24); pdf.cell(0, 10, (data.get('nome_completo') or data.get('full_name', '')).upper(), 0, 1, 'C')
     pdf.set_font(pdf.font_regular, '', 11)
     contato = f"{data.get('cidade_estado', '')} | {data.get('telefone', '')} | {data.get('email', '')}"
     pdf.cell(0, 8, contato, 0, 1, 'C'); pdf.ln(2)
-    pdf.set_font(pdf.font_bold, '', 12); pdf.cell(0, 8, data.get('cargo', '').upper(), 0, 1, 'C')
+    pdf.set_font(pdf.font_bold, '', 12); pdf.cell(0, 8, (data.get('cargo') or data.get('desired_role', '')).upper(), 0, 1, 'C')
     pdf.ln(5); pdf.line(10, pdf.get_y(), 200, pdf.get_y()); pdf.ln(7)
 
     def add_section(title, content):
-        if not content or (isinstance(content, str) and ( 'pular' in content.lower() or 'não informado' in content.lower())): return
-        pdf.set_font(pdf.font_bold, 'B', 12); pdf.cell(0, 8, title.upper(), 0, 1, 'L'); pdf.ln(2)
+        if not content: return
+        pdf.set_font(pdf.font_bold, 'B', 12); pdf.cell(0, 8, title.upper(), 0, 1, 'L'); pdf.ln(1)
         pdf.set_font(pdf.font_regular, '', 10)
         
         if isinstance(content, list) and all(isinstance(i, dict) for i in content): # Experiências
             for item in content:
                 pdf.set_font(pdf.font_bold, 'B', 10); pdf.cell(0, 6, f"{item.get('cargo', '')}, {item.get('empresa', '')}", 0, 1)
-                pdf.set_font(pdf.font_regular, 'I', 9); pdf.multi_cell(0, 5, item.get('periodo', ''), 0, 'L')
+                pdf.set_font(pdf.font_regular, 'I', 9); pdf.multi_cell(0, 5, item.get('periodo', ''), 0, 'L'); pdf.ln(1)
                 pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"  • {item.get('descricao', '')}"); pdf.ln(3)
         elif isinstance(content, list): # Habilidades, Cursos
              for item in content: pdf.multi_cell(0, 5, f"• {item}")
         else: # Resumo, Formação
             pdf.multi_cell(0, 6, content)
-        pdf.ln(5)
-
-    title_map_pt = {"resumo": "Resumo", "experiencias": "Experiência Profissional", "formacao": "Formação Acadêmica", "habilidades": "Habilidades", "cursos": "Cursos e Certificações"}
-    title_map_en = {"professional_summary": "Summary", "work_experience": "Work Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses & Certifications"}
-    
-    add_section(title_map_pt.get('resumo'), data.get('resumo') or data.get('professional_summary'))
-    add_section(title_map_pt.get('experiencias'), data.get('experiencias') or data.get('work_experience'))
-    add_section(title_map_pt.get('formacao'), [data.get('formacao') or data.get('education')])
-    add_section(title_map_pt.get('habilidades'), data.get('habilidades') or data.get('skills'))
-    add_section(title_map_pt.get('cursos'), data.get('cursos') or data.get('courses_certifications'))
+        pdf.ln(4)
+        
+    title_map = {"resumo": "Resumo", "experiencias": "Experiência Profissional", "formacao": "Formação Acadêmica", "habilidades": "Habilidades", "cursos": "Cursos e Certificações"} if lang == 'pt' else {"professional_summary": "Summary", "work_experience": "Work Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses & Certifications"}
+    add_section(title_map.get('resumo', 'Resumo'), data.get('resumo') or data.get('professional_summary'))
+    add_section(title_map.get('experiencias', 'Experiências'), data.get('experiencias') or data.get('work_experience'))
+    add_section(title_map.get('formacao', 'Formação'), [data.get('formacao')] if data.get('formacao') else [data.get('education')])
+    add_section(title_map.get('habilidades', 'Habilidades'), data.get('habilidades') or data.get('skills'))
+    add_section(title_map.get('cursos', 'Cursos'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
 def generate_template_criativo(data, path):
     pdf = PDF()
-    pdf.add_font_setup(); pdf.add_page(); pdf.set_auto_page_break(auto=True, margin=10)
-    PRIMARY_COLOR, BG_COLOR = (34, 49, 63), (236, 240, 241)
+    pdf.add_font_setup(); pdf.add_page(); pdf.set_auto_page_break(auto=True, margin=15)
+    HEADER_COLOR = (211, 84, 0)
     lang = 'en' if 'full_name' in data else 'pt'
-    
-    # --- Coluna da Esquerda (Barra Lateral) ---
-    pdf.set_fill_color(*PRIMARY_COLOR); pdf.rect(0, 0, 75, 297, 'F')
-    pdf.set_text_color(255, 255, 255)
-    
-    # Nome e Cargo na Barra Lateral
-    pdf.set_xy(10, 25)
-    pdf.set_font(pdf.font_bold, 'B', 22); pdf.multi_cell(65, 10, data.get('nome_completo', ''), 0, 'C')
-    pdf.set_font(pdf.font_regular, 'I', 12); pdf.set_x(10); pdf.cell(65, 10, data.get('cargo', ''), 0, 1, 'C')
-    pdf.set_x(10); pdf.line(15, pdf.get_y()+5, 70, pdf.get_y()+5); pdf.ln(15)
 
-    def add_sidebar_section(title, content_list, is_contact=False):
-        if not content_list: return
-        pdf.set_x(10); pdf.set_font(pdf.font_bold, 'B', 12); pdf.cell(65, 8, title.upper(), 0, 1, 'L'); pdf.ln(2)
-        pdf.set_font(pdf.font_regular, '', 9)
-        for item in content_list:
-            if item:
-                pdf.set_x(12); pdf.multi_cell(60, 5, item, 0, 'L')
-        pdf.ln(8)
+    # --- Faixa Laranja do Cabeçalho ---
+    pdf.set_fill_color(*HEADER_COLOR); pdf.rect(0, 10, 210, 35, 'F')
+    pdf.set_y(18); pdf.set_font(pdf.font_bold, 'B', 24); pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 10, data.get('nome_completo') or data.get('full_name', ''), 0, 1, 'C')
+    pdf.set_font(pdf.font_regular, '', 12); pdf.cell(0, 8, data.get('cargo') or data.get('desired_role', ''), 0, 1, 'C')
+    
+    # --- Contato Abaixo do Nome ---
+    pdf.set_y(pdf.get_y() + 8)
+    pdf.set_font(pdf.font_regular, '', 9); pdf.set_text_color(80, 80, 80)
+    contato = f"{data.get('cidade_estado', '')} | {data.get('telefone', '')} | {data.get('email', '')}"
+    pdf.cell(0, 6, contato, 0, 1, 'C')
+    pdf.set_y(70)
 
-    contact_list = [
-        f"📍 {data.get('cidade_estado', '')}",
-        f"📞 {data.get('telefone', '')}",
-        f"✉️ {data.get('email', '')}"
-    ]
-    add_sidebar_section("Contato" if lang == 'pt' else "Contact", [item for item in contact_list if item.split(' ')[-1]])
-    add_sidebar_section("Habilidades" if lang == 'pt' else "Skills", [f"• {s}" for s in (data.get('habilidades') or data.get('skills', []))])
-    
-    # --- Coluna da Direita (Conteúdo Principal) ---
-    pdf.set_xy(85, 25); pdf.set_text_color(40, 40, 40)
-    
-    def add_main_section(title, content):
-        if not content or (isinstance(content, str) and ('pular' in content.lower() or 'não informado' in content.lower())): return
-        pdf.set_x(85); pdf.set_font(pdf.font_bold, 'B', 14); pdf.cell(0, 8, title.upper(), 0, 1, 'L')
-        pdf.set_draw_color(*PRIMARY_COLOR); pdf.line(85, pdf.get_y(), 125, pdf.get_y()); pdf.ln(5)
-        pdf.set_font(pdf.font_regular, '', 10); pdf.set_text_color(80, 80, 80)
+    def add_section(title, content):
+        if not content: return
+        pdf.set_font(pdf.font_bold, 'B', 12); pdf.set_text_color(*HEADER_COLOR)
+        pdf.cell(0, 12, title.upper(), 0, 1, 'L'); pdf.ln(1)
+        pdf.set_font(pdf.font_regular, '', 10); pdf.set_text_color(50, 50, 50)
         
         if isinstance(content, list) and all(isinstance(i, dict) for i in content): # Experiências
             for item in content:
-                pdf.set_x(85); pdf.set_font(pdf.font_bold, 'B', 11); pdf.multi_cell(115, 6, f"{item.get('cargo', '')} | {item.get('empresa', '')}", 0, 'L')
-                pdf.set_x(85); pdf.set_font(pdf.font_regular, 'I', 9); pdf.set_text_color(120, 120, 120); pdf.multi_cell(115, 5, item.get('periodo', ''), 0, 'L')
-                pdf.set_font(pdf.font_regular, '', 10); pdf.set_text_color(80, 80, 80); pdf.set_x(88)
-                pdf.multi_cell(110, 5, f"• {item.get('descricao', '')}"); pdf.ln(5)
-        elif isinstance(content, list): # Cursos, Formação
-             for item in content:
-                pdf.set_x(88); pdf.multi_cell(110, 5, f"• {item}")
-             pdf.ln(5)
-        else: # Resumo
-            pdf.set_x(85); pdf.multi_cell(115, 6, content)
-        pdf.ln(8)
+                pdf.set_font(pdf.font_bold, 'B', 10); pdf.multi_cell(0, 6, f"{item.get('cargo', '')} | {item.get('empresa', '')}", 0, 'L')
+                pdf.set_font(pdf.font_regular, 'I', 9); pdf.multi_cell(0, 6, item.get('periodo', ''), 0, 'L'); pdf.ln(1)
+                pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"• {item.get('descricao', '')}"); pdf.ln(3)
+        elif isinstance(content, list): # Habilidades, Cursos, etc
+            for item in content:
+                pdf.multi_cell(0, 5, f"• {item}")
+        else: # Resumo, Formação
+            pdf.multi_cell(0, 5, content)
+        pdf.ln(5)
 
-    title_map_pt = {"resumo": "Sobre Mim", "experiencias": "Experiência Profissional", "formacao": "Formação", "cursos": "Cursos e Certificações"}
-    title_map_en = {"professional_summary": "About Me", "work_experience": "Work Experience", "education": "Education", "courses_certifications": "Courses & Certifications"}
-
-    add_main_section(title_map_pt.get('resumo'), data.get('resumo') or data.get('professional_summary'))
-    add_main_section(title_map_pt.get('experiencias'), data.get('experiencias') or data.get('work_experience'))
-    add_main_section(title_map_pt.get('formacao'), [data.get('formacao') or data.get('education')])
-    add_main_section(title_map_pt.get('cursos'), data.get('cursos') or data.get('courses_certifications'))
-    
+    title_map = {"resumo": "Sobre Mim", "experiencias": "Experiência", "formacao": "Educação", "habilidades": "Competências", "cursos": "Cursos"} if lang == 'pt' else {"professional_summary": "About Me", "work_experience": "Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses"}
+    add_section(title_map.get('resumo', 'Resumo'), data.get('resumo') or data.get('professional_summary'))
+    add_section(title_map.get('experiencias', 'Experiências'), data.get('experiencias') or data.get('work_experience'))
+    add_section(title_map.get('formacao', 'Educação'), [data.get('formacao')] if data.get('formacao') else [data.get('education')])
+    add_section(title_map.get('habilidades', 'Habilidades'), data.get('habilidades') or data.get('skills'))
+    add_section(title_map.get('cursos', 'Cursos'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
 # ==============================================================================
-# --- 7. LÓGICA E FLUXO DA CONVERSA (VERSÃO OSCAR)
+# --- 7. LÓGICA E FLUXO DA CONVERSA
 # ==============================================================================
 CONVERSATION_FLOW = [
     ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
@@ -460,7 +420,6 @@ def handle_state(state):
     return decorator
 
 def show_payment_options(phone):
-    """Exibe as opções de plano para o usuário."""
     message = f"""Certo, vamos escolher seu plano. Você terá acesso a 3 modelos de currículo (Moderno, Clássico e Criativo) e poderá editar quantas vezes quiser antes de finalizar.
 
 *Plano Básico - R$ {PRECO_BASICO:.2f}*
@@ -487,7 +446,6 @@ Qual plano você prefere? (*básico*, *premium*, *revisão* ou *assinatura*)"""
     update_user(phone, {'state': 'awaiting_plan_choice'})
 
 def show_review_menu(phone, resume_data):
-    """Exibe o menu de revisão com os dados atuais do currículo."""
     review_text = "Tudo pronto! 🎉\n\nVamos revisar as informações antes de finalizar. Veja como ficou:\n\n"
     for i, key in enumerate(REVIEW_ORDER):
         value = resume_data.get(key, 'Não preenchido')
@@ -580,7 +538,7 @@ def create_flow_handler(current_step_index):
         if current_key in ['habilidades', 'cursos']:
             if not resume_data.get(current_key): resume_data[current_key] = []
             if current_key == 'habilidades':
-                resume_data[current_key].extend([format_text(current_key, h) for h in extracted_info.split(',')])
+                resume_data[current_key].extend([h.strip() for h in extracted_info.split(',')])
             else:
                 resume_data[current_key].append(extracted_info)
             if current_key == 'cursos':
@@ -632,9 +590,8 @@ def handle_exp_description(user, message_data):
     resume_data = json.loads(user['resume_data'])
     
     if 'experiencias' not in resume_data or not isinstance(resume_data['experiencias'], list): resume_data['experiencias'] = []
-    resume_data['experiencias'].insert(0, current_experience) # Adiciona no início
+    resume_data['experiencias'].insert(0, current_experience)
     
-    # Define o cargo principal do currículo com base na primeira experiência adicionada
     if not resume_data.get('cargo'):
         resume_data['cargo'] = current_experience.get('cargo')
         logging.info(f"Cargo principal definido como: {resume_data['cargo']}")
@@ -680,7 +637,6 @@ def handle_review_choice(user, message_data):
     if message.isdigit() and 1 <= int(message) <= len(REVIEW_ORDER):
         item_index = int(message) - 1
         field_to_edit = REVIEW_ORDER[item_index]
-        # Pergunta genérica para edição
         question_to_ask = f"Ok, vamos corrigir seu *{REVIEW_KEY_MAP[field_to_edit]}*. Por favor, me envie a informação correta."
         update_user(phone, {'state': 'awaiting_correction_input', 'editing_field': field_to_edit})
         send_whatsapp_message(phone, question_to_ask)
@@ -694,13 +650,11 @@ def handle_correction_input(user, message_data):
         handle_default(user, message_data); return
     
     resume_data = json.loads(user['resume_data'])
-    # Usa a mesma função de formatação para a correção
-    question = f"Qual o(a) {REVIEW_KEY_MAP[field_to_edit]} correto(a)?"
+    question = f"Qual o(a) {REVIEW_KEY_MAP.get(field_to_edit, field_to_edit)} correto(a)?"
     corrected_info = extract_and_format_info(field_to_edit, question, message)
     resume_data[field_to_edit] = corrected_info
     
-    update_user(phone, {'resume_data': json.dumps(resume_data), 'editing_field': None, 'state': 'awaiting_review_choice'})
-    # Mostra o menu de revisão atualizado
+    update_user(phone, {'resume_data': json.dumps(resume_data), 'editing_field': None})
     show_review_menu(phone, resume_data)
 
 @handle_state('awaiting_payment_proof')
