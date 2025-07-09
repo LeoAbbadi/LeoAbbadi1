@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO FINAL - 3 TEMPLATES ÚNICOS, FLUXO COMPLETO, MODO DE TESTE E EDIÇÃO DE 7 DIAS
+# VERSÃO OTIMIZADA - SEM EDIÇÃO DE 7 DIAS E MAIS RÁPIDO
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -61,7 +61,6 @@ if not os.path.exists(TEMP_DIR): os.makedirs(TEMP_DIR)
 def init_database():
     conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
     cursor = conn.cursor()
-    # ## MELHORIA: ADICIONADA COLUNA 'payment_timestamp' ##
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             phone TEXT PRIMARY KEY, state TEXT, resume_data TEXT,
@@ -92,7 +91,7 @@ def update_user(phone, data):
             'phone': phone, 'state': 'awaiting_welcome', 'resume_data': json.dumps({}),
             'plan': 'none', 'template': 'none', 'payment_verified': 0,
             'last_interaction': datetime.now(), 'current_experience': json.dumps({}),
-            'payment_timestamp': None # ## MELHORIA: INICIALIZA CAMPO ##
+            'payment_timestamp': None
         }
         initial_data.update(data)
         columns = ', '.join(initial_data.keys())
@@ -109,7 +108,7 @@ def update_user(phone, data):
     conn.close()
 
 # ==============================================================================
-# --- COMUNICAÇÃO WHATSAPP (sem alterações)
+# --- COMUNICAÇÃO WHATSAPP
 # ==============================================================================
 def send_whatsapp_message(phone, message):
     logging.info(f"Enviando mensagem para {phone}: {message}")
@@ -135,7 +134,7 @@ def send_whatsapp_document(phone, doc_path, filename, caption=""):
         logging.error(f"Erro ao enviar documento para {phone}: {e}")
 
 # ==============================================================================
-# --- FUNÇÕES DE IA (OPENAI) (sem alterações)
+# --- FUNÇÕES DE IA (OPENAI)
 # ==============================================================================
 def get_openai_response(prompt_messages, is_json=False):
     if not openai.api_key: return "Desculpe, minha IA (OpenAI) não está configurada."
@@ -198,11 +197,13 @@ def generate_interview_questions(resume_data):
     return get_openai_response([{"role": "system", "content": system_prompt.format(cargo=resume_data.get('cargo', ''))}, {"role": "user", "content": user_prompt}])
 
 # ==============================================================================
-# --- GERAÇÃO DE PDF (sem alterações)
+# --- GERAÇÃO DE PDF (COM OTIMIZAÇÃO)
 # ==============================================================================
-class PDF(FPDF):
-    def add_font_setup(self):
-        try:
+
+# Pré-carrega as fontes uma vez para evitar reprocessamento
+def setup_fonts(pdf_instance):
+    try:
+        if not hasattr(setup_fonts, "fonts_loaded"):
             if not os.path.exists(FONT_DIR):
                 os.makedirs(FONT_DIR)
                 logging.warning(f"Pasta de fontes não encontrada, criada em {FONT_DIR}. Faça o upload dos arquivos .ttf.")
@@ -218,17 +219,26 @@ class PDF(FPDF):
                 if not os.path.isfile(path):
                     raise RuntimeError(f"Arquivo de fonte não encontrado: {path}")
 
-            self.add_font('DejaVu', '', font_paths['DejaVu'], uni=True)
-            self.add_font('DejaVu', 'B', font_paths['DejaVuB'], uni=True)
-            self.add_font('DejaVu', 'I', font_paths['DejaVuI'], uni=True)
-            self.add_font('DejaVu', 'BI', font_paths['DejaVuBI'], uni=True)
-            self.font_regular = 'DejaVu'
-            self.font_bold = 'DejaVu'
-        except Exception as e:
-            logging.error(f"ERRO DE FONTE: {e}. Usando 'Helvetica' como alternativa.")
-            self.font_regular = 'Helvetica'
-            self.font_bold = 'Helvetica'
-        self.set_font(self.font_regular, '', 10)
+            pdf_instance.add_font('DejaVu', '', font_paths['DejaVu'], uni=True)
+            pdf_instance.add_font('DejaVu', 'B', font_paths['DejaVuB'], uni=True)
+            pdf_instance.add_font('DejaVu', 'I', font_paths['DejaVuI'], uni=True)
+            pdf_instance.add_font('DejaVu', 'BI', font_paths['DejaVuBI'], uni=True)
+            setup_fonts.fonts_loaded = True
+            logging.info("Fontes DejaVu carregadas e cacheadas.")
+        
+        pdf_instance.font_regular = 'DejaVu'
+        pdf_instance.font_bold = 'DejaVu'
+
+    except Exception as e:
+        logging.error(f"ERRO DE FONTE: {e}. Usando 'Helvetica' como alternativa.")
+        pdf_instance.font_regular = 'Helvetica'
+        pdf_instance.font_bold = 'Helvetica'
+
+
+class PDF(FPDF):
+    def add_font_setup(self):
+        # A lógica agora está em uma função externa para permitir o cache
+        setup_fonts(self)
 
 def generate_resume_pdf(data, template_choice, path):
     templates = {
@@ -424,7 +434,7 @@ def generate_template_criativo(data, path):
 
 
 # ==============================================================================
-# --- FLUXO DA CONVERSA (com alterações)
+# --- FLUXO DA CONVERSA
 # ==============================================================================
 def generate_fake_data():
     first_names, last_names = ["Ana", "Carlos", "Beatriz", "Daniel", "Elisa", "Fernando", "Laura", "Rafael"], ["Silva", "Souza", "Pereira", "Costa", "Rodrigues", "Almeida", "Nunes", "Mendes"]
@@ -480,7 +490,6 @@ def process_message(phone, message_data):
         update_user(phone, {'state': 'awaiting_welcome'})
         user = get_user(phone)
     
-    # ## MELHORIA: VERIFICA PALAVRA-CHAVE DE REINÍCIO A QUALQUER MOMENTO ##
     text = message_data.get('text', '').lower().strip()
     if text in ['oi', 'ola', 'olá', 'recomeçar', 'começar']:
         handle_default(user, message_data)
@@ -540,7 +549,6 @@ def create_flow_handler(current_step_index):
         extracted_info = ""
         if current_key == 'resumo' and message.lower().strip() in ['pular', 'nao', 'não']:
             extracted_info = "Não informado"
-        # ## MELHORIA: EMAIL SEMPRE MINÚSCULO ##
         elif current_key == 'email':
             extracted_info = extract_info_from_message(current_question, message).lower().strip()
         else:
@@ -666,7 +674,7 @@ def show_review_menu(phone, resume_data):
             display_data += f"*{i+1}. {friendly_name}:*{value}\n"
         else:
             display_data += f"*{i+1}. {friendly_name}:* {value}\n"
-
+    
     review_text += "\nSe estiver tudo certo, digite *'finalizar'* para ir ao pagamento!"
     send_whatsapp_message(phone, review_text)
     update_user(phone, {'state': 'awaiting_review_choice'})
@@ -683,7 +691,7 @@ def handle_review_choice(user, message_data):
         send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
         update_user(phone, {'state': 'awaiting_payment_proof'})
     else:
-        # ## MELHORIA: SIMPLIFICADO O PROCESSO DE CORREÇÃO ##
+        # Processo de correção simplificado
         send_whatsapp_message(phone, "Para corrigir algum dado, por favor reinicie a conversa digitando 'oi'. Seus dados já salvos serão mantidos para a nova edição. Se estiver tudo certo, digite 'finalizar'.")
 
 @handle_state('awaiting_payment_proof')
@@ -696,7 +704,6 @@ def handle_payment_proof(user, message_data):
         if analysis.get('verified'):
             send_whatsapp_message(phone, "Pagamento confirmado! ✅")
             send_whatsapp_message(phone, "Estou preparando seus arquivos...")
-            # ## MELHORIA: SALVA O TIMESTAMP DO PAGAMENTO ##
             update_user(phone, {
                 'payment_verified': 1,
                 'state': 'delivering',
@@ -708,9 +715,6 @@ def handle_payment_proof(user, message_data):
     else:
         send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante de pagamento.")
 
-# ############################################################################ #
-# ## FUNÇÃO MODIFICADA - deliver_final_product ##
-# ############################################################################ #
 def deliver_final_product(user, test_data=None, debug=False):
     phone, plan = user['phone'], user.get('plan')
     resume_data = test_data if test_data else json.loads(user.get('resume_data', '{}'))
@@ -796,34 +800,13 @@ def handle_interview_prep(user, message_data):
     
 @handle_state('completed')
 def handle_completed(user, message_data):
-    send_whatsapp_message(user['phone'], f"Olá! Eu sou o {BOT_NAME}. Já finalizamos seu currículo. Se precisar de uma nova versão ou ajuda, digite 'oi' para recomeçar! Você tem 7 dias para editar seu currículo gratuitamente. 😉")
+    # Mensagem simplificada sem menção ao período de edição
+    send_whatsapp_message(user['phone'], f"Olá! Eu sou o {BOT_NAME}. Já finalizamos seu currículo. Se precisar criar um novo, digite 'oi' para recomeçar! 🚀")
 
-# ## MELHORIA: FUNÇÃO handle_default MODIFICADA ##
 def handle_default(user, message_data):
     phone = user['phone']
     
-    # Verifica se o usuário pode editar gratuitamente
-    if user['state'] == 'completed' and user['payment_timestamp']:
-        try:
-            # Garante que o timestamp é um objeto datetime para comparação
-            payment_time = datetime.fromisoformat(user['payment_timestamp']) if isinstance(user['payment_timestamp'], str) else user['payment_timestamp']
-            
-            if datetime.now() < payment_time + timedelta(days=7):
-                send_whatsapp_message(phone, "Olá de novo! Vi que você está dentro do seu período de 7 dias para edição. 👍")
-                send_whatsapp_message(phone, "Vamos criar uma nova versão do seu currículo. Vou manter seu plano e template.")
-                
-                # Reinicia o estado e os dados do currículo, mas mantém plano e template
-                update_user(phone, {
-                    'state': 'flow_nome_completo',
-                    'resume_data': json.dumps({}),
-                    'payment_verified': 1 # Mantém como verificado para pular o pagamento
-                })
-                send_whatsapp_message(phone, CONVERSATION_FLOW[0][1]) # Pergunta o nome completo
-                return
-        except (TypeError, ValueError) as e:
-            logging.error(f"Erro ao processar timestamp para {phone}: {e}")
-
-    # Fluxo padrão de reinício para novos usuários ou se o período de edição expirou
+    # Lógica de reinício simplificada, sempre começa do zero
     send_whatsapp_message(phone, "Vamos começar (ou recomeçar) do zero!")
     update_user(phone, {
         'state': 'awaiting_welcome',
@@ -831,13 +814,15 @@ def handle_default(user, message_data):
         'plan': 'none',
         'template': 'none',
         'payment_verified': 0,
-        'payment_timestamp': None
+        'payment_timestamp': None, # Limpa o timestamp antigo
+        'current_experience': json.dumps({})
     })
-    handle_welcome(user, message_data)
+    # Chama diretamente o início do fluxo de boas-vindas
+    show_payment_options(phone)
 
 
 # ==============================================================================
-# --- WEBHOOK e INICIALIZAÇÃO (sem alterações)
+# --- WEBHOOK e INICIALIZAÇÃO
 # ==============================================================================
 @app.route('/')
 def health_check():
@@ -853,15 +838,15 @@ def webhook():
         message_data = {}
         
         if data.get('text'):
-             if isinstance(data.get('text'), str):
-                 message_data['text'] = data['text']
-             elif isinstance(data.get('text'), dict) and 'message' in data['text']:
-                 message_data['text'] = data['text']['message']
+            if isinstance(data.get('text'), str):
+                message_data['text'] = data['text']
+            elif isinstance(data.get('text'), dict) and 'message' in data['text']:
+                message_data['text'] = data['text']['message']
         
         elif data.get('type') == 'image' and data.get('imageUrl'):
             message_data['image'] = {'url': data['imageUrl']}
         elif data.get('image') and isinstance(data.get('image'), dict) and 'imageUrl' in data['image']:
-                 message_data['image'] = {'url': data['image']['imageUrl']}
+            message_data['image'] = {'url': data['image']['imageUrl']}
 
         if phone and message_data:
             process_message(phone, message_data)
