@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO PRO - COMPLETA E TOTALMENTE CORRIGIDA (09/07/2025) - FIX DE NameError v2
+# VERSÃO PRO - COMPLETA E TOTALMENTE CORRIGIDA (09/07/2025) - FIX DE NameError v3
 
 # ==============================================================================
 # --- 1. IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -368,6 +368,58 @@ def handle_state(state):
         return func
     return decorator
 
+def show_payment_options(phone):
+    """Exibe as opções de plano para o usuário."""
+    message = f"""Certo, vamos escolher seu plano. Você terá acesso a 3 modelos de currículo (Moderno, Clássico e Criativo) e poderá editar quantas vezes quiser antes de finalizar.
+
+*Plano Básico - R$ {PRECO_BASICO:.2f}*
+📄 1 Currículo em Português (PDF)
+✨ Otimização com IA (opcional)
+💬 Perguntas para Entrevista
+(Válido para {CREDITOS_BASICO} currículos)
+
+*Plano Premium - R$ {PRECO_PREMIUM:.2f}*
+📄 1 Currículo em Português
+🇺🇸 1 Versão em Inglês
+✨ Otimização com IA
+💬 Perguntas para Entrevista
+(Válido para {CREDITOS_PREMIUM} currículos)
+
+*Revisão Humana - R$ {PRECO_REVISAO_HUMANA:.2f}*
+⭐ Tudo do Premium + Revisão por um especialista de RH.
+
+*Assinatura Mensal - R$ {PRECO_ASSINATURA:.2f}*
+👑 Currículos ilimitados, versões em inglês e todos os benefícios enquanto for assinante!
+
+Qual plano você prefere? (*básico*, *premium*, *revisão* ou *assinatura*)"""
+    send_whatsapp_message(phone, message)
+    update_user(phone, {'state': 'awaiting_plan_choice'})
+
+def show_review_menu(phone, resume_data):
+    """Exibe o menu de revisão com os dados atuais do currículo."""
+    review_text = "Tudo pronto! 🎉\n\nVamos revisar as informações antes de finalizar. Veja como ficou:\n\n"
+    for i, key in enumerate(REVIEW_ORDER):
+        value = resume_data.get(key, 'Não preenchido')
+        label = REVIEW_KEY_MAP.get(key, key.replace('_', ' ').capitalize())
+        
+        display_value = value
+        if isinstance(value, list):
+            if not value:
+                display_value = "Nenhum item adicionado"
+            elif all(isinstance(item, dict) for item in value): # Para experiências
+                display_value = "\n".join([f"- {v.get('cargo', '')} em {v.get('empresa', '')}" for v in value])
+            else: # Para habilidades, cursos
+                display_value = ", ".join(map(str, value))
+        
+        if isinstance(display_value, str) and len(display_value) > 100:
+            display_value = display_value[:100] + "..."
+            
+        review_text += f"*{i+1}. {label}:* {display_value}\n"
+
+    review_text += "\nSe precisar corrigir algo, é só me dizer o *número* do item. Se estiver tudo certo, digite *'finalizar'* para irmos ao pagamento."
+    send_whatsapp_message(phone, review_text)
+    update_user(phone, {'state': 'awaiting_review_choice', 'editing_field': None})
+
 def go_to_next_step(phone, resume_data, current_idx):
     user_name = resume_data.get('nome_completo', '').split(' ')[0].capitalize()
     if current_idx + 1 < len(CONVERSATION_FLOW):
@@ -376,11 +428,10 @@ def go_to_next_step(phone, resume_data, current_idx):
         send_whatsapp_message(phone, next_question)
         update_user(phone, {'state': f'flow_{next_key}'})
     else:
-        # Se não há próxima pergunta, vai para a seção de experiência
         update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
         send_whatsapp_message(phone, f"Ótimo, {user_name}. Agora vamos adicionar suas experiências profissionais, começando pela mais recente. Se não tiver, é só dizer 'pular'. Qual foi seu cargo?")
 
-# --- Handlers de Estado (definidos antes de serem chamados) ---
+# --- Handlers de Estado ---
 
 @handle_state('awaiting_welcome')
 def handle_welcome(user, message_data):
@@ -578,7 +629,7 @@ def handle_completed(user, message_data):
 
 def handle_default(user, message_data=None):
     phone = user['phone']
-    if user['plan'] == 'assinatura' and user['subscription_valid_until']:
+    if user.get('plan') == 'assinatura' and user.get('subscription_valid_until'):
         try:
             valid_until = datetime.fromisoformat(user['subscription_valid_until'])
             if datetime.now() < valid_until:
@@ -595,7 +646,7 @@ def handle_default(user, message_data=None):
         'template': 'none', 'payment_verified': 0, 'payment_timestamp': None, 
         'credits': 0, 'subscription_valid_until': None, 'current_experience': json.dumps({}), 'editing_field': None
     })
-    handle_welcome(user, message_data)
+    handle_welcome({'phone': phone}, message_data)
 
 def deliver_final_product(user_data, test_data=None, debug=False):
     with app.app_context():
@@ -638,6 +689,34 @@ def deliver_final_product(user_data, test_data=None, debug=False):
 # ==============================================================================
 # --- 8. WEBHOOK E INICIALIZAÇÃO
 # ==============================================================================
+
+def process_message(phone, message_data):
+    """
+    Processa a mensagem recebida, busca o usuário e direciona para o handler de estado correto.
+    Esta é a função principal que estava faltando.
+    """
+    message_text = message_data.get('text', '').lower().strip()
+    user = get_user(phone)
+
+    # Cria um novo usuário se ele não existir ou se a conversa for reiniciada com um comando
+    if not user or message_text in REINICIAR_COMMANDS:
+        # Passa um dicionário com o telefone para handle_default caso o usuário seja novo
+        user_info = user if user else {'phone': phone}
+        handle_default(user_info, message_data)
+        return
+
+    # Se o usuário existe, encontra o handler de estado apropriado para a situação atual
+    state = user['state']
+    handler = state_handlers.get(state)
+
+    if handler:
+        logging.info(f"Direcionando usuário {phone} (estado: {state}) para o handler: {handler.__name__}")
+        handler(user, message_data)
+    else:
+        # Fallback para o caso de um estado inválido ou não mapeado
+        logging.warning(f"Nenhum handler encontrado para o estado '{state}' do usuário {phone}. Redirecionando para o default.")
+        handle_default(user, message_data)
+
 @app.route('/')
 def health_check():
     return "Cadu está no ar! Versão PRO.", 200
@@ -647,19 +726,30 @@ def webhook():
     try:
         data = request.json
         logging.info(f"Webhook recebido: {json.dumps(data, indent=2)}")
+        
+        # Normaliza a extração de dados do webhook
         phone = data.get('phone')
         message_data = {}
-        if data.get('text'):
-            if isinstance(data.get('text'), str): message_data['text'] = data['text']
-            elif isinstance(data.get('text'), dict) and 'message' in data['text']: message_data['text'] = data['text']['message']
-        elif data.get('type') == 'image' and data.get('imageUrl'): message_data['image'] = {'url': data['imageUrl']}
-        elif data.get('image') and isinstance(data.get('image'), dict) and 'imageUrl' in data['image']: message_data['image'] = {'url': data['image']['imageUrl']}
+        if data.get('text') and isinstance(data['text'], dict) and 'message' in data['text']:
+            message_data['text'] = data['text']['message']
+        elif data.get('text') and isinstance(data['text'], str):
+             message_data['text'] = data['text']
+        elif data.get('type') == 'image' and data.get('imageUrl'):
+             message_data['image'] = {'url': data['imageUrl']}
+        # Adicionei esta verificação extra do log
+        elif 'image' in data and isinstance(data.get('image'), dict) and 'imageUrl' in data['image']:
+             message_data['image'] = {'url': data['image']['imageUrl']}
+
+        # Verifica se temos um número e uma mensagem/imagem para processar
         if phone and message_data:
+            # Chama a função que agora existe!
             process_message(phone, message_data)
         else:
-            logging.warning(f"Webhook de {phone} recebido sem dados válidos.")
+            logging.warning(f"Webhook de {phone} recebido sem dados de mensagem válidos.")
+            
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
+        # Usar exc_info=True para logar o traceback completo do erro
         logging.error(f"Erro crítico no webhook: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
