@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO OTIMIZADA - SEM EDIÇÃO DE 7 DIAS E MAIS RÁPIDO
+# VERSÃO FINAL CORRIGIDA E OTIMIZADA
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -26,7 +26,6 @@ app = Flask(__name__)
 BOT_NAME = "Cadu"
 
 # --- MODO DE TESTE ---
-# Adicione números de telefone aqui para ativar o modo de teste, que gera todos os PDFs.
 DEBUG_PHONE_NUMBERS = ["555195995888", "555199864475"]
 
 # --- CHAVES E CONFIGS ---
@@ -197,13 +196,13 @@ def generate_interview_questions(resume_data):
     return get_openai_response([{"role": "system", "content": system_prompt.format(cargo=resume_data.get('cargo', ''))}, {"role": "user", "content": user_prompt}])
 
 # ==============================================================================
-# --- GERAÇÃO DE PDF (COM OTIMIZAÇÃO)
+# --- GERAÇÃO DE PDF (COM CORREÇÃO DE FONTE)
 # ==============================================================================
-
-# Pré-carrega as fontes uma vez para evitar reprocessamento
-def setup_fonts(pdf_instance):
-    try:
-        if not hasattr(setup_fonts, "fonts_loaded"):
+class PDF(FPDF):
+    def add_font_setup(self):
+        # CORREÇÃO: A adição de fontes deve ocorrer para cada instância do PDF.
+        # A otimização anterior estava incorreta e causava o erro.
+        try:
             if not os.path.exists(FONT_DIR):
                 os.makedirs(FONT_DIR)
                 logging.warning(f"Pasta de fontes não encontrada, criada em {FONT_DIR}. Faça o upload dos arquivos .ttf.")
@@ -219,26 +218,19 @@ def setup_fonts(pdf_instance):
                 if not os.path.isfile(path):
                     raise RuntimeError(f"Arquivo de fonte não encontrado: {path}")
 
-            pdf_instance.add_font('DejaVu', '', font_paths['DejaVu'], uni=True)
-            pdf_instance.add_font('DejaVu', 'B', font_paths['DejaVuB'], uni=True)
-            pdf_instance.add_font('DejaVu', 'I', font_paths['DejaVuI'], uni=True)
-            pdf_instance.add_font('DejaVu', 'BI', font_paths['DejaVuBI'], uni=True)
-            setup_fonts.fonts_loaded = True
-            logging.info("Fontes DejaVu carregadas e cacheadas.")
+            self.add_font('DejaVu', '', font_paths['DejaVu'], uni=True)
+            self.add_font('DejaVu', 'B', font_paths['DejaVuB'], uni=True)
+            self.add_font('DejaVu', 'I', font_paths['DejaVuI'], uni=True)
+            self.add_font('DejaVu', 'BI', font_paths['DejaVuBI'], uni=True)
+            self.font_regular = 'DejaVu'
+            self.font_bold = 'DejaVu'
+            
+        except Exception as e:
+            logging.error(f"ERRO DE FONTE: {e}. Usando 'Helvetica' como alternativa.")
+            self.font_regular = 'Helvetica'
+            self.font_bold = 'Helvetica'
         
-        pdf_instance.font_regular = 'DejaVu'
-        pdf_instance.font_bold = 'DejaVu'
-
-    except Exception as e:
-        logging.error(f"ERRO DE FONTE: {e}. Usando 'Helvetica' como alternativa.")
-        pdf_instance.font_regular = 'Helvetica'
-        pdf_instance.font_bold = 'Helvetica'
-
-
-class PDF(FPDF):
-    def add_font_setup(self):
-        # A lógica agora está em uma função externa para permitir o cache
-        setup_fonts(self)
+        self.set_font(self.font_regular, '', 10)
 
 def generate_resume_pdf(data, template_choice, path):
     templates = {
@@ -476,21 +468,25 @@ def handle_state(state):
         return func
     return decorator
 
+# CORREÇÃO IMPORTANTE: LÓGICA DO MODO DE TESTE AJUSTADA
 def process_message(phone, message_data):
-    if DEBUG_PHONE_NUMBERS and phone in DEBUG_PHONE_NUMBERS:
-        logging.info(f"MODO DE TESTE ATIVADO PARA O NÚMERO: {phone}")
+    text = message_data.get('text', '').lower().strip()
+
+    # CORREÇÃO: O modo de teste agora só ativa com a palavra-chave "teste"
+    if phone in DEBUG_PHONE_NUMBERS and text == 'teste':
+        logging.info(f"MODO DE TESTE ATIVADO MANUALMENTE PARA O NÚMERO: {phone}")
         send_whatsapp_message(phone, "Modo de teste ativado! Gerando todos os modelos de PDFs de exemplo...")
         fake_data = generate_fake_data()
         mock_user = {'phone': phone, 'plan': 'premium'}
         deliver_final_product(mock_user, fake_data, debug=True)
         return
 
+    # O fluxo normal continua para qualquer outra mensagem
     user = get_user(phone)
     if not user:
         update_user(phone, {'state': 'awaiting_welcome'})
         user = get_user(phone)
     
-    text = message_data.get('text', '').lower().strip()
     if text in ['oi', 'ola', 'olá', 'recomeçar', 'começar']:
         handle_default(user, message_data)
         return
@@ -658,7 +654,6 @@ def show_review_menu(phone, resume_data):
     }
     
     flow_keys = [key for key, _ in CONVERSATION_FLOW]
-    # Reorganiza para exibir a experiência no local correto
     all_keys_in_order = flow_keys[:6] + ['experiencias'] + flow_keys[6:]
 
     display_data = ""
@@ -679,7 +674,6 @@ def show_review_menu(phone, resume_data):
     send_whatsapp_message(phone, review_text)
     update_user(phone, {'state': 'awaiting_review_choice'})
 
-
 @handle_state('awaiting_review_choice')
 def handle_review_choice(user, message_data):
     phone, message = user['phone'], message_data.get('text', '').lower().strip()
@@ -691,7 +685,6 @@ def handle_review_choice(user, message_data):
         send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
         update_user(phone, {'state': 'awaiting_payment_proof'})
     else:
-        # Processo de correção simplificado
         send_whatsapp_message(phone, "Para corrigir algum dado, por favor reinicie a conversa digitando 'oi'. Seus dados já salvos serão mantidos para a nova edição. Se estiver tudo certo, digite 'finalizar'.")
 
 @handle_state('awaiting_payment_proof')
@@ -783,7 +776,6 @@ def deliver_final_product(user, test_data=None, debug=False):
     update_user(phone, {'state': 'awaiting_interview_prep_choice'})
     send_whatsapp_message(phone, "Seus arquivos foram entregues! 📄✨\n\nComo um bônus final, gostaria que eu gerasse uma lista de possíveis perguntas de entrevista com base no seu currículo? (Responda com *sim* ou *não*)")
 
-
 @handle_state('awaiting_interview_prep_choice')
 def handle_interview_prep(user, message_data):
     phone = user['phone']
@@ -798,15 +790,15 @@ def handle_interview_prep(user, message_data):
         send_whatsapp_message(phone, "Entendido! Sem problemas. Muito sucesso na sua jornada! 🚀")
     update_user(phone, {'state': 'completed'})
     
+# CORREÇÃO: LÓGICA SIMPLIFICADA SEM EDIÇÃO DE 7 DIAS
 @handle_state('completed')
 def handle_completed(user, message_data):
-    # Mensagem simplificada sem menção ao período de edição
     send_whatsapp_message(user['phone'], f"Olá! Eu sou o {BOT_NAME}. Já finalizamos seu currículo. Se precisar criar um novo, digite 'oi' para recomeçar! 🚀")
 
+# CORREÇÃO: LÓGICA SIMPLIFICADA SEM EDIÇÃO DE 7 DIAS
 def handle_default(user, message_data):
     phone = user['phone']
     
-    # Lógica de reinício simplificada, sempre começa do zero
     send_whatsapp_message(phone, "Vamos começar (ou recomeçar) do zero!")
     update_user(phone, {
         'state': 'awaiting_welcome',
@@ -814,12 +806,10 @@ def handle_default(user, message_data):
         'plan': 'none',
         'template': 'none',
         'payment_verified': 0,
-        'payment_timestamp': None, # Limpa o timestamp antigo
+        'payment_timestamp': None,
         'current_experience': json.dumps({})
     })
-    # Chama diretamente o início do fluxo de boas-vindas
     show_payment_options(phone)
-
 
 # ==============================================================================
 # --- WEBHOOK e INICIALIZAÇÃO
