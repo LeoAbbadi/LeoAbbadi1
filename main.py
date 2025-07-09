@@ -383,7 +383,7 @@ REVIEW_KEY_MAP = {
     'email': 'E-mail', 'cargo': 'Cargo Desejado', 'resumo': 'Resumo',
     'experiencias': 'Experiências', 'formacao': 'Formação', 'habilidades': 'Habilidades', 'cursos': 'Cursos'
 }
-REVIEW_ORDER = ['nome_completo', 'cidade_estado', 'telefone', 'email', 'cargo', 'resumo', 'experiencias', 'formacao', 'habilidades', 'cursos']
+REVIEW_ORDER = ['nome_completo', 'cidade_estado', 'telefone', 'email', 'cargo', 'resumo', 'formacao', 'habilidades', 'cursos', 'experiencias']
 
 state_handlers = {}
 def handle_state(state):
@@ -392,23 +392,7 @@ def handle_state(state):
         return func
     return decorator
 
-def process_message(phone, message_data):
-    text = message_data.get('text', '').lower().strip()
-    user = get_user(phone)
-    if not user:
-        update_user(phone, {'state': 'awaiting_welcome'})
-        user = get_user(phone)
-    if text in REINICIAR_COMMANDS:
-        handle_default(user, message_data)
-        return
-    state = user['state']
-    handler = state_handlers.get(state, handle_default)
-    handler(user, message_data)
-
-@handle_state('awaiting_welcome')
-def handle_welcome(user, message_data):
-    send_whatsapp_message(user['phone'], f"Olá! Eu sou o {BOT_NAME} 🤖, seu novo assistente de carreira. Vou te ajudar a criar um currículo profissional incrível!")
-    show_payment_options(user['phone'])
+# --- Funções Auxiliares do Fluxo (definidas antes dos handlers) ---
 
 def show_payment_options(phone):
     message = (
@@ -421,6 +405,47 @@ def show_payment_options(phone):
     )
     send_whatsapp_message(phone, message)
     update_user(phone, {'state': 'awaiting_plan_choice'})
+
+def show_review_menu(phone, resume_data):
+    review_text = "Ótimo, chegamos ao final! Revise seus dados. Se algo estiver errado, é só me dizer o número do item que deseja corrigir:\n\n"
+    for i, key in enumerate(REVIEW_ORDER, 1):
+        friendly_name = REVIEW_KEY_MAP.get(key, "Dado")
+        value = resume_data.get(key, 'Não preenchido')
+        display_value = ""
+        if key == 'experiencias' and isinstance(value, list):
+            display_value = "\n".join([f"  - {exp.get('cargo', '')} em {exp.get('empresa', '')}" for exp in value]) if value else "Nenhuma"
+        else:
+            display_value = str(value)
+        review_text += f"*{i}. {friendly_name}:* {display_value}\n"
+    review_text += "\nSe estiver tudo certo, digite *'finalizar'* para ir ao pagamento!"
+    update_user(phone, {'state': 'awaiting_review_choice', 'editing_field': None})
+    send_whatsapp_message(phone, review_text)
+
+def go_to_next_step(phone, resume_data, current_idx):
+    user_name = resume_data.get('nome_completo', '').split(' ')[0].capitalize()
+    
+    current_key = CONVERSATION_FLOW[current_idx][0]
+    
+    if current_key == 'resumo':
+        update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
+        send_whatsapp_message(phone, f"Ótimo, {user_name}. Agora vamos adicionar suas experiências profissionais, começando pela mais recente. Se não tiver, é só dizer 'pular'. Qual foi seu cargo?")
+        return
+        
+    if current_idx + 1 < len(CONVERSATION_FLOW):
+        next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
+        next_question = next_question.format(nome=user_name)
+        send_whatsapp_message(phone, next_question)
+        update_user(phone, {'state': f'flow_{next_key}'})
+    else:
+        # Este 'else' agora só é atingido ao final do fluxo (após cursos)
+        show_review_menu(phone, resume_data)
+
+# --- Handlers de Estado ---
+
+@handle_state('awaiting_welcome')
+def handle_welcome(user, message_data):
+    send_whatsapp_message(user['phone'], f"Olá! Eu sou o {BOT_NAME} 🤖, seu novo assistente de carreira. Vou te ajudar a criar um currículo profissional incrível!")
+    show_payment_options(user['phone'])
 
 @handle_state('awaiting_plan_choice')
 def handle_plan_choice(user, message_data):
@@ -459,11 +484,14 @@ def create_flow_handler(current_step_index):
     current_key, current_question = CONVERSATION_FLOW[current_step_index]
     @handle_state(f'flow_{current_key}')
     def flow_handler(user, message_data):
-        phone, message = user['phone'], message_data.get('text', '')
+        phone, message = user['phone'], message_data.get('text', '').lower().strip()
         resume_data = json.loads(user['resume_data'])
-        if current_key == 'resumo' and message.lower().strip() in PULAR_COMMANDS:
+
+        # Lógica para pular resumo
+        if current_key == 'resumo' and message in PULAR_COMMANDS:
             extracted_info = "Não informado"
-        elif current_key == 'cursos' and message.lower().strip() in PRONTO_COMMANDS:
+        # Lógica para finalizar lista de cursos
+        elif current_key == 'cursos' and message in PRONTO_COMMANDS:
             go_to_next_step(phone, resume_data, current_step_index)
             return
         elif current_key == 'email':
@@ -471,13 +499,17 @@ def create_flow_handler(current_step_index):
         else:
             extracted_info = extract_info_from_message(current_question, message)
         
-        # Lógica para listas (habilidades, cursos)
         if current_key in ['habilidades', 'cursos']:
             if not resume_data.get(current_key): resume_data[current_key] = []
-            resume_data[current_key].append(extracted_info)
+            # Para habilidades, processa a lista de uma vez
+            if current_key == 'habilidades':
+                resume_data[current_key].extend([h.strip() for h in extracted_info.split(',')])
+            else: # Para cursos, adiciona um por vez
+                resume_data[current_key].append(extracted_info)
+            
             if current_key == 'cursos':
                 send_whatsapp_message(phone, 'Curso adicionado. Me diga o próximo ou digite "pronto" para finalizar.')
-                # Não avança para o próximo passo, espera mais cursos ou "pronto"
+                update_user(phone, {'resume_data': json.dumps(resume_data)}) # Salva o curso adicionado
                 return 
         else:
             resume_data[current_key] = extracted_info
@@ -485,30 +517,13 @@ def create_flow_handler(current_step_index):
         update_user(phone, {'resume_data': json.dumps(resume_data)})
         go_to_next_step(phone, resume_data, current_step_index)
 
-def go_to_next_step(phone, resume_data, current_idx):
-    user_name = resume_data.get('nome_completo', '').split(' ')[0].capitalize()
-    
-    current_key = CONVERSATION_FLOW[current_idx][0]
-    
-    if current_key == 'resumo':
-        update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
-        send_whatsapp_message(phone, f"Ótimo, {user_name}. Agora vamos adicionar suas experiências profissionais, começando pela mais recente. Se não tiver, é só dizer 'pular'. Qual foi seu cargo?")
-        return
-        
-    if current_idx + 1 < len(CONVERSATION_FLOW):
-        next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
-        next_question = next_question.format(nome=user_name)
-        send_whatsapp_message(phone, next_question)
-        update_user(phone, {'state': f'flow_{next_key}'})
-    else:
-        show_review_menu(phone, resume_data)
-
 for i in range(len(CONVERSATION_FLOW)): create_flow_handler(i)
 
 @handle_state('awaiting_experience_job_title')
 def handle_exp_job_title(user, message_data):
-    phone, message = user['phone'], message_data.get('text', '')
-    if message.lower().strip() in PULAR_COMMANDS:
+    phone, message = user['phone'], message_data.get('text', '').lower().strip()
+    if message in PULAR_COMMANDS:
+        # Pula direto para a revisão se não houver experiência
         show_review_menu(phone, json.loads(user['resume_data']))
         return
     current_experience = {'cargo': message}
@@ -620,44 +635,6 @@ def handle_payment_proof(user, message_data):
     else:
         send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante de pagamento.")
 
-def deliver_final_product(user_data, test_data=None, debug=False):
-    with app.app_context():
-        phone, plan = user_data['phone'], user_data['plan']
-        resume_data = test_data if test_data else json.loads(user_data['resume_data'])
-        if plan != 'assinatura' and not debug:
-            if user_data.get('credits', 0) < 1:
-                send_whatsapp_message(phone, "Você não tem mais créditos. Digite 'oi' para ver os planos.")
-                update_user(phone, {'state': 'awaiting_welcome'}); return
-            send_whatsapp_message(phone, f"Preparando seu currículo...")
-        else:
-             send_whatsapp_message(phone, "Preparando seu currículo...")
-        template = user_data['template']
-        pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{resume_data.get('nome_completo', 'user').replace(' ', '_')}.pdf")
-        generate_resume_pdf(resume_data, template, pdf_path)
-        send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), "Seu currículo novinho em folha!")
-        if plan in ['premium', 'revisao_humana', 'assinatura']:
-            send_whatsapp_message(phone, "Gerando sua versão em Inglês...")
-            english_data = translate_resume_data_to_english(resume_data)
-            if english_data:
-                english_pdf_path = os.path.join(TEMP_DIR, f"Resume_{english_data.get('full_name', 'user').replace(' ', '_')}.pdf")
-                generate_resume_pdf(english_data, template, english_pdf_path)
-                send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), "Aqui está sua versão em Inglês!")
-                os.remove(english_pdf_path)
-        if plan == 'revisao_humana':
-            send_whatsapp_message(ADMIN_PHONE_NUMBER, f"Nova revisão solicitada!\n\nCliente: {resume_data.get('nome_completo')}\nTelefone: {phone}\nPlano: Revisão Humana")
-            send_whatsapp_document(ADMIN_PHONE_NUMBER, pdf_path, f"REVISAR_{os.path.basename(pdf_path)}")
-            send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
-        os.remove(pdf_path)
-        
-        # Debita o crédito APÓS o sucesso do envio
-        if plan != 'assinatura' and not debug:
-            new_credits = user_data.get('credits', 1) - 1
-            update_user(phone, {'credits': new_credits})
-            send_whatsapp_message(phone, f"Crédito utilizado! Você ainda tem {new_credits} crédito(s).")
-            
-        update_user(phone, {'state': 'awaiting_interview_prep_choice'})
-        send_whatsapp_message(phone, "Seus arquivos foram entregues! 📄✨\n\nComo um bônus final, gostaria de gerar uma lista de perguntas de entrevista com base no seu currículo? (Responda com *sim* ou *não*)")
-
 @handle_state('awaiting_interview_prep_choice')
 def handle_interview_prep(user, message_data):
     phone, choice = user['phone'], message_data.get('text', '').lower().strip()
@@ -688,16 +665,55 @@ def handle_default(user, message_data=None):
                 return
         except (TypeError, ValueError):
             logging.error(f"Timestamp inválido para assinante {phone}")
-    send_whatsapp_message(phone, "Vamos começar (ou recomeçar)! Por favor, escolha um dos nossos planos.")
+    
+    # CORREÇÃO: Reinicia o fluxo chamando a função de boas-vindas para uma saudação limpa
     update_user(phone, {
-        'state': 'awaiting_plan_choice', 'resume_data': json.dumps({}), 'plan': 'none', 
+        'state': 'awaiting_welcome', 'resume_data': json.dumps({}), 'plan': 'none', 
         'template': 'none', 'payment_verified': 0, 'payment_timestamp': None, 
         'credits': 0, 'subscription_valid_until': None, 'current_experience': json.dumps({}), 'editing_field': None
     })
-    show_payment_options(phone)
+    handle_welcome(user, message_data)
+
+def deliver_final_product(user_data, test_data=None, debug=False):
+    with app.app_context():
+        phone, plan, template = user_data['phone'], user_data['plan'], user_data['template']
+        resume_data = test_data if test_data else json.loads(user_data['resume_data'])
+        
+        if plan != 'assinatura' and not debug and user_data.get('credits', 0) < 1:
+            send_whatsapp_message(phone, "Você não tem mais créditos. Digite 'oi' para ver os planos.")
+            update_user(phone, {'state': 'awaiting_welcome'}); return
+        
+        send_whatsapp_message(phone, "Preparando seu currículo principal...")
+        pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{resume_data.get('nome_completo', 'user').replace(' ', '_')}.pdf")
+        generate_resume_pdf(resume_data, template, pdf_path)
+        send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), "Seu currículo novinho em folha!")
+        
+        if plan in ['premium', 'revisao_humana', 'assinatura']:
+            send_whatsapp_message(phone, "Gerando sua versão em Inglês...")
+            english_data = translate_resume_data_to_english(resume_data)
+            if english_data:
+                english_pdf_path = os.path.join(TEMP_DIR, f"Resume_{english_data.get('full_name', 'user').replace(' ', '_')}.pdf")
+                generate_resume_pdf(english_data, template, english_pdf_path)
+                send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), "Aqui está sua versão em Inglês!")
+                os.remove(english_pdf_path)
+
+        if plan == 'revisao_humana':
+            send_whatsapp_message(ADMIN_PHONE_NUMBER, f"Nova revisão solicitada!\n\nCliente: {resume_data.get('nome_completo')}\nTelefone: {phone}\nPlano: Revisão Humana")
+            send_whatsapp_document(ADMIN_PHONE_NUMBER, pdf_path, f"REVISAR_{os.path.basename(pdf_path)}")
+            send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
+        
+        os.remove(pdf_path)
+        
+        if plan != 'assinatura' and not debug:
+            new_credits = user_data.get('credits', 1) - 1
+            update_user(phone, {'credits': new_credits})
+            send_whatsapp_message(phone, f"Crédito utilizado! Você ainda tem {new_credits} crédito(s).")
+            
+        update_user(phone, {'state': 'awaiting_interview_prep_choice'})
+        send_whatsapp_message(phone, "Seus arquivos foram entregues! 📄✨\n\nComo um bônus final, gostaria de gerar uma lista de perguntas de entrevista com base no seu currículo? (Responda com *sim* ou *não*)")
 
 # ==============================================================================
-# --- 8. WEBHOOK e INICIALIZAÇÃO
+# --- 8. WEBHOOK E INICIALIZAÇÃO
 # ==============================================================================
 @app.route('/')
 def health_check():
