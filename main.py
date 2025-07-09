@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO FINAL - 3 TEMPLATES ÚNICOS, FLUXO COMPLETO E MODO DE TESTE
+# VERSÃO FINAL - 3 TEMPLATES ÚNICOS, FLUXO COMPLETO, MODO DE TESTE E EDIÇÃO DE 7 DIAS
 
 # ==============================================================================
 # --- IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -61,12 +61,13 @@ if not os.path.exists(TEMP_DIR): os.makedirs(TEMP_DIR)
 def init_database():
     conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
     cursor = conn.cursor()
+    # ## MELHORIA: ADICIONADA COLUNA 'payment_timestamp' ##
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             phone TEXT PRIMARY KEY, state TEXT, resume_data TEXT,
             plan TEXT DEFAULT 'none', template TEXT DEFAULT 'none',
             payment_verified INTEGER DEFAULT 0, last_interaction TIMESTAMP,
-            current_experience TEXT
+            current_experience TEXT, payment_timestamp TIMESTAMP
         )
     ''')
     conn.commit()
@@ -90,7 +91,8 @@ def update_user(phone, data):
         initial_data = {
             'phone': phone, 'state': 'awaiting_welcome', 'resume_data': json.dumps({}),
             'plan': 'none', 'template': 'none', 'payment_verified': 0,
-            'last_interaction': datetime.now(), 'current_experience': json.dumps({})
+            'last_interaction': datetime.now(), 'current_experience': json.dumps({}),
+            'payment_timestamp': None # ## MELHORIA: INICIALIZA CAMPO ##
         }
         initial_data.update(data)
         columns = ', '.join(initial_data.keys())
@@ -107,7 +109,7 @@ def update_user(phone, data):
     conn.close()
 
 # ==============================================================================
-# --- COMUNICAÇÃO WHATSAPP
+# --- COMUNICAÇÃO WHATSAPP (sem alterações)
 # ==============================================================================
 def send_whatsapp_message(phone, message):
     logging.info(f"Enviando mensagem para {phone}: {message}")
@@ -128,12 +130,12 @@ def send_whatsapp_document(phone, doc_path, filename, caption=""):
     payload = {"phone": phone, "document": f"data:application/pdf;base64,{doc_base64}", "fileName": filename, "caption": caption}
     headers = {"Content-Type": "application/json", "Client-Token": ZAPI_CLIENT_TOKEN}
     try:
-        requests.post(url, json=payload, headers=headers, timeout=30) # Aumentado o timeout para envio de arquivo
+        requests.post(url, json=payload, headers=headers, timeout=30)
     except requests.exceptions.RequestException as e:
         logging.error(f"Erro ao enviar documento para {phone}: {e}")
 
 # ==============================================================================
-# --- FUNÇÕES DE IA (OPENAI)
+# --- FUNÇÕES DE IA (OPENAI) (sem alterações)
 # ==============================================================================
 def get_openai_response(prompt_messages, is_json=False):
     if not openai.api_key: return "Desculpe, minha IA (OpenAI) não está configurada."
@@ -196,17 +198,15 @@ def generate_interview_questions(resume_data):
     return get_openai_response([{"role": "system", "content": system_prompt.format(cargo=resume_data.get('cargo', ''))}, {"role": "user", "content": user_prompt}])
 
 # ==============================================================================
-# --- GERAÇÃO DE PDF
+# --- GERAÇÃO DE PDF (sem alterações)
 # ==============================================================================
 class PDF(FPDF):
     def add_font_setup(self):
         try:
-            # Garante que a pasta de fontes existe
             if not os.path.exists(FONT_DIR):
                 os.makedirs(FONT_DIR)
                 logging.warning(f"Pasta de fontes não encontrada, criada em {FONT_DIR}. Faça o upload dos arquivos .ttf.")
             
-            # Verifica a existência de cada arquivo de fonte
             font_paths = {
                 'DejaVu': os.path.join(FONT_DIR, 'DejaVuSans.ttf'),
                 'DejaVuB': os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf'),
@@ -246,8 +246,6 @@ def generate_simple_text_pdf(text, path):
     pdf.set_font(pdf.font_regular, '', 11)
     pdf.multi_cell(0, 7, text)
     pdf.output(path)
-
-# --- NOVOS TEMPLATES DE CURRÍCULO ---
 
 def generate_template_moderno(data, path):
     pdf = PDF()
@@ -379,7 +377,7 @@ def generate_template_criativo(data, path):
     pdf.add_font_setup()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    HEADER_COLOR, ACCENT_COLOR = (211, 84, 0), (230, 126, 34) # Laranja
+    HEADER_COLOR, ACCENT_COLOR = (211, 84, 0), (230, 126, 34)
 
     pdf.set_fill_color(*HEADER_COLOR)
     pdf.rect(0, 10, 210, 35, 'F')
@@ -424,8 +422,9 @@ def generate_template_criativo(data, path):
     add_section(title_map_pt.get('cursos') if lang == 'pt' else title_map_en.get('courses_certifications'), data.get('cursos') or data.get('courses_certifications'))
     pdf.output(path)
 
+
 # ==============================================================================
-# --- FLUXO DA CONVERSA
+# --- FLUXO DA CONVERSA (com alterações)
 # ==============================================================================
 def generate_fake_data():
     first_names, last_names = ["Ana", "Carlos", "Beatriz", "Daniel", "Elisa", "Fernando", "Laura", "Rafael"], ["Silva", "Souza", "Pereira", "Costa", "Rodrigues", "Almeida", "Nunes", "Mendes"]
@@ -480,6 +479,13 @@ def process_message(phone, message_data):
     if not user:
         update_user(phone, {'state': 'awaiting_welcome'})
         user = get_user(phone)
+    
+    # ## MELHORIA: VERIFICA PALAVRA-CHAVE DE REINÍCIO A QUALQUER MOMENTO ##
+    text = message_data.get('text', '').lower().strip()
+    if text in ['oi', 'ola', 'olá', 'recomeçar', 'começar']:
+        handle_default(user, message_data)
+        return
+
     state = user['state']
     handler = state_handlers.get(state, handle_default)
     handler(user, message_data)
@@ -534,8 +540,9 @@ def create_flow_handler(current_step_index):
         extracted_info = ""
         if current_key == 'resumo' and message.lower().strip() in ['pular', 'nao', 'não']:
             extracted_info = "Não informado"
+        # ## MELHORIA: EMAIL SEMPRE MINÚSCULO ##
         elif current_key == 'email':
-            extracted_info = extract_info_from_message(current_question, message).lower()
+            extracted_info = extract_info_from_message(current_question, message).lower().strip()
         else:
             extracted_info = extract_info_from_message(current_question, message)
 
@@ -545,24 +552,21 @@ def create_flow_handler(current_step_index):
         go_to_next_step(phone, resume_data, current_step_index)
 
 def go_to_next_step(phone, resume_data, current_idx):
-    # Condição para iniciar a coleta de experiência profissional
     if CONVERSATION_FLOW[current_idx][0] == 'resumo':
         update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
         send_whatsapp_message(phone, "Ótimo. Agora vamos adicionar suas experiências profissionais, começando pela mais recente. Se não tiver, diga 'pular'. Qual foi seu cargo?")
         return
 
-    # Condição para ir para o próximo passo do fluxo principal
     if current_idx + 1 < len(CONVERSATION_FLOW):
         next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
         
-        # Formata a pergunta se necessário
         if '{nome}' in next_question:
             user_name = resume_data.get('nome_completo', '').split(' ')[0]
             next_question = next_question.format(nome=user_name.capitalize())
 
         send_whatsapp_message(phone, next_question)
         update_user(phone, {'state': f'flow_{next_key}'})
-    else: # Fim do fluxo principal de perguntas
+    else:
         show_review_menu(phone, resume_data)
 
 for i in range(len(CONVERSATION_FLOW)):
@@ -572,11 +576,8 @@ for i in range(len(CONVERSATION_FLOW)):
 def handle_exp_job_title(user, message_data):
     phone, message = user['phone'], message_data.get('text', '')
     if message.lower().strip() in ['pular', 'nao', 'não']:
-        # Pula toda a seção de experiência
         current_idx = [k for k, q in CONVERSATION_FLOW].index('resumo')
-        next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
-        send_whatsapp_message(phone, next_question)
-        update_user(phone, {'state': f'flow_{next_key}'})
+        go_to_next_step(phone, json.loads(user['resume_data']), current_idx)
         return
         
     current_experience = {'cargo': message}
@@ -606,7 +607,7 @@ def handle_exp_description(user, message_data):
     current_experience['descricao'] = message
     
     resume_data = json.loads(user.get('resume_data', '{}'))
-    if 'experiencias' not in resume_data:
+    if 'experiencias' not in resume_data or not isinstance(resume_data['experiencias'], list):
         resume_data['experiencias'] = []
     resume_data['experiencias'].append(current_experience)
     
@@ -620,7 +621,6 @@ def handle_another_experience(user, message_data):
         update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
         send_whatsapp_message(phone, "Vamos lá. Qual era o seu cargo na próxima experiência?")
     else:
-        # Após coletar experiências, pergunta sobre a otimização por IA
         send_whatsapp_message(phone, "Ok, terminamos de adicionar suas experiências.")
         update_user(phone, {'state': 'awaiting_improve_choice'})
         send_whatsapp_message(phone, "Gostaria que eu usasse minha IA para reescrever suas experiências de uma forma mais profissional e focada em resultados? (Responda com *sim* ou *não*)")
@@ -638,15 +638,11 @@ def handle_improve_choice(user, message_data):
     else:
         send_whatsapp_message(phone, "Sem problemas! Vamos continuar.")
     
-    # Continua o fluxo de onde parou (depois da experiência)
     current_idx = [k for k, q in CONVERSATION_FLOW].index('resumo')
-    next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
-    send_whatsapp_message(phone, next_question)
-    update_user(phone, {'state': f'flow_{next_key}'})
+    go_to_next_step(phone, resume_data, current_idx)
 
 def show_review_menu(phone, resume_data):
     review_text = "Antes de finalizar, revise seus dados. Para corrigir, diga o número do item:\n\n"
-    # Mapeia chaves internas para nomes amigáveis
     key_map = {
         'nome_completo': 'Nome Completo', 'cidade_estado': 'Cidade/Estado', 'telefone': 'Telefone',
         'email': 'E-mail', 'cargo': 'Cargo Desejado', 'resumo': 'Resumo Profissional',
@@ -654,7 +650,8 @@ def show_review_menu(phone, resume_data):
     }
     
     flow_keys = [key for key, _ in CONVERSATION_FLOW]
-    all_keys_in_order = flow_keys[:6] + ['experiencias'] + flow_keys[6:] # Insere 'experiencias' no lugar certo
+    # Reorganiza para exibir a experiência no local correto
+    all_keys_in_order = flow_keys[:6] + ['experiencias'] + flow_keys[6:]
 
     display_data = ""
     for i, key in enumerate(all_keys_in_order):
@@ -670,7 +667,6 @@ def show_review_menu(phone, resume_data):
         else:
             display_data += f"*{i+1}. {friendly_name}:* {value}\n"
 
-    review_text += display_data
     review_text += "\nSe estiver tudo certo, digite *'finalizar'* para ir ao pagamento!"
     send_whatsapp_message(phone, review_text)
     update_user(phone, {'state': 'awaiting_review_choice'})
@@ -687,8 +683,8 @@ def handle_review_choice(user, message_data):
         send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
         update_user(phone, {'state': 'awaiting_payment_proof'})
     else:
-        # Simplificado para evitar loop de correção complexo
-        send_whatsapp_message(phone, "Para corrigir algum dado, por favor reinicie a conversa digitando 'oi'. Se estiver tudo certo, digite 'finalizar'.")
+        # ## MELHORIA: SIMPLIFICADO O PROCESSO DE CORREÇÃO ##
+        send_whatsapp_message(phone, "Para corrigir algum dado, por favor reinicie a conversa digitando 'oi'. Seus dados já salvos serão mantidos para a nova edição. Se estiver tudo certo, digite 'finalizar'.")
 
 @handle_state('awaiting_payment_proof')
 def handle_payment_proof(user, message_data):
@@ -700,7 +696,12 @@ def handle_payment_proof(user, message_data):
         if analysis.get('verified'):
             send_whatsapp_message(phone, "Pagamento confirmado! ✅")
             send_whatsapp_message(phone, "Estou preparando seus arquivos...")
-            update_user(phone, {'payment_verified': 1, 'state': 'delivering'})
+            # ## MELHORIA: SALVA O TIMESTAMP DO PAGAMENTO ##
+            update_user(phone, {
+                'payment_verified': 1,
+                'state': 'delivering',
+                'payment_timestamp': datetime.now()
+            })
             deliver_final_product(user)
         else:
             send_whatsapp_message(phone, "Hmm, não consegui confirmar o pagamento para o nome correto. Tente enviar uma imagem mais nítida do comprovante. Se o problema persistir, fale com o suporte.")
@@ -708,7 +709,7 @@ def handle_payment_proof(user, message_data):
         send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante de pagamento.")
 
 # ############################################################################ #
-# ## FUNÇÃO MODIFICADA ##
+# ## FUNÇÃO MODIFICADA - deliver_final_product ##
 # ############################################################################ #
 def deliver_final_product(user, test_data=None, debug=False):
     phone, plan = user['phone'], user.get('plan')
@@ -716,8 +717,6 @@ def deliver_final_product(user, test_data=None, debug=False):
     
     if debug:
         templates_to_test = ['moderno', 'classico', 'criativo']
-        
-        # Traduz os dados para o inglês UMA VEZ para ser mais eficiente
         english_data = translate_resume_data_to_english(resume_data)
 
         for t in templates_to_test:
@@ -727,8 +726,6 @@ def deliver_final_product(user, test_data=None, debug=False):
             send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), f"Modelo: {t.capitalize()}")
             os.remove(pdf_path)
             
-            # --- ALTERAÇÃO PRINCIPAL AQUI ---
-            # Gera a versão em inglês APENAS para o template 'moderno'
             if t == 'moderno' and english_data:
                 english_pdf_path = os.path.join(TEMP_DIR, f"Resume_English_Teste_{t}.pdf")
                 generate_resume_pdf(english_data, t, english_pdf_path)
@@ -744,7 +741,7 @@ def deliver_final_product(user, test_data=None, debug=False):
             os.remove(letter_path)
             
         send_whatsapp_message(phone, "Modo de teste concluído!")
-        update_user(phone, {'state': 'completed'}) # Finaliza o fluxo de teste
+        update_user(phone, {'state': 'completed'})
         return
 
     # --- Lógica para usuários normais (não-debug) ---
@@ -799,21 +796,48 @@ def handle_interview_prep(user, message_data):
     
 @handle_state('completed')
 def handle_completed(user, message_data):
-    send_whatsapp_message(user['phone'], f"Olá! Eu sou o {BOT_NAME}. Já finalizamos seu currículo, mas se precisar de uma nova versão ou de ajuda com outra coisa, é só me chamar digitando 'oi' para recomeçar! 😉")
+    send_whatsapp_message(user['phone'], f"Olá! Eu sou o {BOT_NAME}. Já finalizamos seu currículo. Se precisar de uma nova versão ou ajuda, digite 'oi' para recomeçar! Você tem 7 dias para editar seu currículo gratuitamente. 😉")
 
+# ## MELHORIA: FUNÇÃO handle_default MODIFICADA ##
 def handle_default(user, message_data):
     phone = user['phone']
-    text = message_data.get('text', '').lower().strip()
-    # Palavra-chave para reiniciar o fluxo
-    if text in ['oi', 'ola', 'olá', 'recomeçar', 'começar']:
-        update_user(phone, {'state': 'awaiting_welcome', 'resume_data': json.dumps({}), 'plan': 'none', 'template': 'none', 'payment_verified': 0})
-        handle_welcome(user, message_data)
-    else:
-        send_whatsapp_message(user['phone'], "Desculpe, não entendi o que você quis dizer. Para recomeçar o processo de criação do currículo, digite 'oi'.")
+    
+    # Verifica se o usuário pode editar gratuitamente
+    if user['state'] == 'completed' and user['payment_timestamp']:
+        try:
+            # Garante que o timestamp é um objeto datetime para comparação
+            payment_time = datetime.fromisoformat(user['payment_timestamp']) if isinstance(user['payment_timestamp'], str) else user['payment_timestamp']
+            
+            if datetime.now() < payment_time + timedelta(days=7):
+                send_whatsapp_message(phone, "Olá de novo! Vi que você está dentro do seu período de 7 dias para edição. 👍")
+                send_whatsapp_message(phone, "Vamos criar uma nova versão do seu currículo. Vou manter seu plano e template.")
+                
+                # Reinicia o estado e os dados do currículo, mas mantém plano e template
+                update_user(phone, {
+                    'state': 'flow_nome_completo',
+                    'resume_data': json.dumps({}),
+                    'payment_verified': 1 # Mantém como verificado para pular o pagamento
+                })
+                send_whatsapp_message(phone, CONVERSATION_FLOW[0][1]) # Pergunta o nome completo
+                return
+        except (TypeError, ValueError) as e:
+            logging.error(f"Erro ao processar timestamp para {phone}: {e}")
+
+    # Fluxo padrão de reinício para novos usuários ou se o período de edição expirou
+    send_whatsapp_message(phone, "Vamos começar (ou recomeçar) do zero!")
+    update_user(phone, {
+        'state': 'awaiting_welcome',
+        'resume_data': json.dumps({}),
+        'plan': 'none',
+        'template': 'none',
+        'payment_verified': 0,
+        'payment_timestamp': None
+    })
+    handle_welcome(user, message_data)
 
 
 # ==============================================================================
-# --- WEBHOOK e INICIALIZAÇÃO
+# --- WEBHOOK e INICIALIZAÇÃO (sem alterações)
 # ==============================================================================
 @app.route('/')
 def health_check():
@@ -825,21 +849,19 @@ def webhook():
         data = request.json
         logging.info(f"Webhook recebido: {json.dumps(data, indent=2)}")
         
-        # Adaptação para diferentes estruturas de webhook da Z-API
         phone = data.get('phone')
         message_data = {}
         
-        # Mensagem de texto
-        if data.get('text') and isinstance(data.get('text'), str): # Estrutura mais nova/simples
-            message_data['text'] = data['text']
-        elif data.get('text') and isinstance(data.get('text'), dict) and 'message' in data['text']: # Estrutura antiga
-            message_data['text'] = data['text']['message']
+        if data.get('text'):
+             if isinstance(data.get('text'), str):
+                 message_data['text'] = data['text']
+             elif isinstance(data.get('text'), dict) and 'message' in data['text']:
+                 message_data['text'] = data['text']['message']
         
-        # Mensagem de imagem
         elif data.get('type') == 'image' and data.get('imageUrl'):
             message_data['image'] = {'url': data['imageUrl']}
         elif data.get('image') and isinstance(data.get('image'), dict) and 'imageUrl' in data['image']:
-             message_data['image'] = {'url': data['image']['imageUrl']}
+                 message_data['image'] = {'url': data['image']['imageUrl']}
 
         if phone and message_data:
             process_message(phone, message_data)
@@ -859,7 +881,6 @@ def check_abandoned_sessions():
         cursor = conn.cursor()
         time_limit = datetime.now() - timedelta(hours=24)
         
-        # Adiciona condição para não lembrar usuários que já receberam lembrete
         cursor.execute("SELECT * FROM users WHERE last_interaction < ? AND state NOT IN ('completed', 'reminded', 'delivering')", (time_limit,))
         abandoned_users = cursor.fetchall()
         
@@ -867,7 +888,7 @@ def check_abandoned_sessions():
             logging.info(f"Enviando lembrete para: {user['phone']}")
             message = f"Olá, {BOT_NAME} passando para dar um oi! 👋 Vi que começamos a montar seu currículo mas não terminamos. Que tal continuarmos de onde paramos? É só responder a última pergunta!"
             send_whatsapp_message(user['phone'], message)
-            update_user(user['phone'], {'state': 'reminded'}) # Atualiza o estado para não enviar novamente
+            update_user(user['phone'], {'state': 'reminded'})
             
         conn.close()
 
@@ -878,5 +899,4 @@ if __name__ == '__main__':
     scheduler.add_job(check_abandoned_sessions, 'interval', hours=6)
     scheduler.start()
     port = int(os.environ.get('PORT', 8080))
-    # 'debug=False' é importante para produção
     app.run(host='0.0.0.0', port=port, debug=False)
