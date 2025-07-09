@@ -31,6 +31,7 @@ DEBUG_PHONE_NUMBERS = ["555195995888", "555199864475"]
 ADMIN_PHONE_NUMBER = "5551994914188" # Número para receber as solicitações de revisão
 PULAR_COMMANDS = ['pular', 'nao', 'não', 'n', 'ignorar', 'não tenho']
 PRONTO_COMMANDS = ['pronto', 'acabei', 'fim', 'só isso', 'finalizar']
+REINICIAR_COMMANDS = ['oi', 'ola', 'olá', 'recomeçar', 'começar', 'menu', 'inicio']
 
 # --- CHAVES E CONFIGS ---
 ZAPI_INSTANCE_ID = os.environ.get('ZAPI_INSTANCE_ID')
@@ -156,7 +157,7 @@ def run_long_task_in_background(target_func, args=()):
 # --- FUNÇÕES DE IA
 # ==============================================================================
 def get_openai_response(prompt_messages, is_json=False):
-    if not openai.api_key: return "Desculpe, minha IA (OpenAI) não está configurada."
+    if not openai.api_key: return None
     try:
         model_to_use = "gpt-4o"
         response_format = {"type": "json_object"} if is_json else {"type": "text"}
@@ -204,19 +205,15 @@ def improve_experience_descriptions(experiences):
     if response_str:
         try:
             response_data = json.loads(response_str)
-            if isinstance(response_data, dict) and 'work_experience' in response_data:
-                return response_data['work_experience']
-            elif isinstance(response_data, list):
-                return response_data
-        except (json.JSONDecodeError, TypeError):
-            return experiences
+            if isinstance(response_data, dict) and 'work_experience' in response_data: return response_data['work_experience']
+            elif isinstance(response_data, list): return response_data
+        except (json.JSONDecodeError, TypeError): return experiences
     return experiences
 
 def generate_interview_questions(resume_data):
     system_prompt = "Você é um recrutador sênior preparando uma entrevista para a vaga de '{cargo}'. Com base no currículo do candidato, crie uma lista de 5 a 7 perguntas de entrevista perspicazes e relevantes, misturando perguntas comportamentais (STAR: Situação, Tarefa, Ação, Resultado) e técnicas baseadas nas experiências e habilidades listadas. Formate a resposta como um texto único, com cada pergunta numerada."
     user_prompt = f"Currículo do candidato:\n{json.dumps(resume_data, indent=2, ensure_ascii=False)}\n\nListe as perguntas para a entrevista:"
     return get_openai_response([{"role": "system", "content": system_prompt.format(cargo=resume_data.get('cargo', ''))}, {"role": "user", "content": user_prompt}])
-
 
 # ==============================================================================
 # --- GERAÇÃO DE PDF
@@ -227,17 +224,14 @@ class PDF(FPDF):
             if not os.path.exists(FONT_DIR):
                 os.makedirs(FONT_DIR)
                 logging.warning(f"Pasta de fontes não encontrada, criada em {FONT_DIR}.")
-            
             font_paths = {
                 'DejaVu': os.path.join(FONT_DIR, 'DejaVuSans.ttf'),
                 'DejaVuB': os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf'),
                 'DejaVuI': os.path.join(FONT_DIR, 'DejaVuSans-Oblique.ttf'),
                 'DejaVuBI': os.path.join(FONT_DIR, 'DejaVuSans-BoldOblique.ttf'),
             }
-
             for path in font_paths.values():
                 if not os.path.isfile(path): raise RuntimeError(f"Arquivo de fonte não encontrado: {path}")
-
             self.add_font('DejaVu', '', font_paths['DejaVu'], uni=True)
             self.add_font('DejaVu', 'B', font_paths['DejaVuB'], uni=True)
             self.add_font('DejaVu', 'I', font_paths['DejaVuI'], uni=True)
@@ -251,25 +245,21 @@ class PDF(FPDF):
         self.set_font(self.font_regular, '', 10)
 
 def generate_resume_pdf(data, template_choice, path):
-    templates = { 'moderno': generate_template_moderno, 'classico': generate_template_classico, 'criativo': generate_template_criativo }
+    templates = {'moderno': generate_template_moderno, 'classico': generate_template_classico, 'criativo': generate_template_criativo}
     pdf_function = templates.get(template_choice, generate_template_moderno)
     pdf_function(data, path)
 
-# (generate_template_* e outras funções de PDF permanecem aqui, sem alterações)
 def generate_template_moderno(data, path):
     pdf = PDF()
     pdf.add_font_setup()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     SIDEBAR_COLOR, ACCENT_COLOR = (45, 52, 54), (26, 188, 156)
-
     pdf.set_fill_color(*SIDEBAR_COLOR)
     pdf.rect(0, 0, 70, 297, 'F')
     pdf.set_xy(10, 20)
     pdf.set_text_color(255, 255, 255)
-
     lang = 'en' if 'full_name' in data else 'pt'
-
     def add_sidebar_section(title, content):
         if not content or not str(content).strip(): return
         pdf.set_x(10)
@@ -279,12 +269,10 @@ def generate_template_moderno(data, path):
         if isinstance(content, list): content = "\n".join([f"• {item}" for item in content])
         pdf.multi_cell(55, 5, content)
         pdf.ln(5)
-
     contact_info = f"{data.get('email', '')}\n{data.get('telefone') or data.get('phone')}\n{data.get('cidade_estado') or data.get('city_state')}"
     add_sidebar_section("Contato" if lang == 'pt' else "Contact", contact_info)
     add_sidebar_section("Formação" if lang == 'pt' else "Education", data.get('formacao') or data.get('education'))
     add_sidebar_section("Habilidades" if lang == 'pt' else "Skills", data.get('habilidades') or data.get('skills'))
-
     pdf.set_xy(80, 15)
     pdf.set_text_color(40, 40, 40)
     pdf.set_font(pdf.font_bold, 'B', 26)
@@ -294,7 +282,6 @@ def generate_template_moderno(data, path):
     pdf.set_x(80)
     pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'L')
     pdf.ln(8)
-
     def add_right_section(title, content):
         if content and str(content).strip() and 'pular' not in str(content).lower() and 'não informado' not in str(content).lower():
             pdf.set_x(80)
@@ -325,10 +312,8 @@ def generate_template_moderno(data, path):
                 pdf.set_x(80)
                 pdf.multi_cell(120, 6, content)
             pdf.ln(4)
-
     title_map_pt = {"resumo": "Resumo Profissional", "experiencias": "Experiência Profissional", "cursos": "Cursos e Certificações"}
     title_map_en = {"professional_summary": "Professional Summary", "work_experience": "Work Experience", "courses_certifications": "Courses & Certifications"}
-
     add_right_section(title_map_pt.get('resumo') if lang == 'pt' else title_map_en.get('professional_summary'), data.get('resumo') or data.get('professional_summary'))
     add_right_section(title_map_pt.get('experiencias') if lang == 'pt' else title_map_en.get('work_experience'), data.get('experiencias') or data.get('work_experience'))
     add_right_section(title_map_pt.get('cursos') if lang == 'pt' else title_map_en.get('courses_certifications'), data.get('cursos') or data.get('courses_certifications'))
@@ -425,24 +410,6 @@ def generate_template_criativo(data, path):
 # ==============================================================================
 # --- FLUXO DA CONVERSA
 # ==============================================================================
-CONVERSATION_FLOW = [
-    ('nome_completo', 'Legal! Para começar, qual o seu nome completo?'),
-    ('cidade_estado', 'Ótimo, {nome}! Agora me diga em qual cidade e estado você mora.'),
-    ('telefone', 'Pode me informar um telefone de contato com DDD?'),
-    ('email', 'Qual o seu melhor e-mail para contato?'),
-    ('cargo', 'Certo, {nome}. Qual o cargo ou área que você está buscando?'),
-    ('resumo', 'Vamos caprichar! Escreva um pequeno resumo sobre você e seus objetivos. (Se não tiver, é só dizer "pular").'),
-    ('formacao', 'Qual a sua formação? (Ex: Ensino Médio Completo, Graduação em Administração)'),
-    ('habilidades', 'Quais são suas principais habilidades, {nome}? (Ex: Comunicação, Pacote Office). Pode listar várias, separando por vírgula.'),
-    ('cursos', 'Você tem algum curso ou certificação? Me conte um por um. Quando acabar, digite "pronto".')
-]
-REVIEW_KEY_MAP = {
-    'nome_completo': 'Nome', 'cidade_estado': 'Cidade/Estado', 'telefone': 'Telefone',
-    'email': 'E-mail', 'cargo': 'Cargo Desejado', 'resumo': 'Resumo',
-    'experiencias': 'Experiências', 'formacao': 'Formação', 'habilidades': 'Habilidades', 'cursos': 'Cursos'
-}
-REVIEW_ORDER = ['nome_completo', 'cidade_estado', 'telefone', 'email', 'cargo', 'resumo', 'experiencias', 'formacao', 'habilidades', 'cursos']
-
 state_handlers = {}
 def handle_state(state):
     def decorator(func):
@@ -457,7 +424,7 @@ def process_message(phone, message_data):
         logging.info(f"MODO DE TESTE ATIVADO MANUALMENTE PARA O NÚMERO: {phone}")
         send_whatsapp_message(phone, "Modo de teste ativado! Gerando todos os modelos de PDFs de exemplo...")
         fake_data = generate_fake_data()
-        mock_user_data = {'phone': phone, 'plan': 'premium', 'credits': 99} # Simula um usuário para a função
+        mock_user_data = {'phone': phone, 'plan': 'premium', 'template': 'moderno', 'credits': 99}
         run_long_task_in_background(target_func=deliver_final_product, args=(mock_user_data, fake_data, True))
         return
 
@@ -466,8 +433,8 @@ def process_message(phone, message_data):
         update_user(phone, {'state': 'awaiting_welcome'})
         user = get_user(phone)
     
-    if text in ['oi', 'ola', 'olá', 'recomeçar', 'começar', 'menu', 'inicio']:
-        handle_default(user)
+    if text in REINICIAR_COMMANDS:
+        handle_default(user, message_data)
         return
 
     state = user['state']
@@ -504,13 +471,119 @@ def handle_plan_choice(user, message_data):
     chosen_plan = next((value for key, value in plan_map.items() if key in choice), None)
             
     if chosen_plan:
-        update_user(phone, {'plan': chosen_plan['name'], 'credits': chosen_plan['credits']})
+        update_data = {
+            'plan': chosen_plan['name'],
+            'credits': chosen_plan['credits'],
+            'state': 'choosing_template'
+        }
+        update_user(phone, update_data)
         send_whatsapp_message(phone, "Ótima escolha! Agora, vamos escolher o visual do seu currículo:\n\n1. *Moderno*\n2. *Clássico*\n3. *Criativo*\n\nÉ só me dizer o número ou o nome.")
-        update_user(phone, {'state': 'choosing_template'})
     else:
         send_whatsapp_message(phone, "Plano não reconhecido. Por favor, escolha *básico*, *premium*, *assinatura* ou *revisão*.")
+        
+@handle_state('choosing_template')
+def handle_choosing_template(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '').lower().strip()
+    template_map = {'1': 'moderno', 'moderno': 'moderno', '2': 'classico', 'clássico': 'classico', '3': 'criativo', 'criativo': 'criativo'}
+    chosen_template = template_map.get(message, None)
+    if chosen_template:
+        update_user(phone, {'template': chosen_template, 'state': 'flow_nome_completo'})
+        send_whatsapp_message(phone, f"Perfeito! Vamos criar seu currículo no estilo *{chosen_template.capitalize()}*.")
+        send_whatsapp_message(phone, CONVERSATION_FLOW[0][1])
+    else:
+        send_whatsapp_message(phone, "Não entendi. Diga o nome ou o número do template.")
 
-# ... (outros handlers) ...
+def create_flow_handler(current_step_index):
+    current_key, current_question = CONVERSATION_FLOW[current_step_index]
+    @handle_state(f'flow_{current_key}')
+    def flow_handler(user, message_data):
+        phone, message = user['phone'], message_data.get('text', '')
+        resume_data = json.loads(user['resume_data'])
+        if current_key == 'resumo' and message.lower().strip() in PULAR_COMMANDS:
+            extracted_info = "Não informado"
+        elif current_key == 'email':
+            extracted_info = extract_info_from_message(current_question, message).lower().strip()
+        else:
+            extracted_info = extract_info_from_message(current_question, message)
+        resume_data[current_key] = extracted_info
+        update_user(phone, {'resume_data': json.dumps(resume_data)})
+        go_to_next_step(phone, resume_data, current_step_index)
+
+def go_to_next_step(phone, resume_data, current_idx):
+    user_name = resume_data.get('nome_completo', '').split(' ')[0].capitalize()
+    if CONVERSATION_FLOW[current_idx][0] == 'cursos':
+        update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
+        send_whatsapp_message(phone, f"Ótimo, {user_name}. Agora vamos adicionar suas experiências profissionais, começando pela mais recente. Se não tiver, é só dizer 'pular'. Qual foi seu cargo?")
+        return
+    if current_idx + 1 < len(CONVERSATION_FLOW):
+        next_key, next_question = CONVERSATION_FLOW[current_idx + 1]
+        next_question = next_question.format(nome=user_name)
+        send_whatsapp_message(phone, next_question)
+        update_user(phone, {'state': f'flow_{next_key}'})
+    else:
+        show_review_menu(phone, resume_data)
+for i in range(len(CONVERSATION_FLOW)): create_flow_handler(i)
+
+@handle_state('awaiting_experience_job_title')
+def handle_exp_job_title(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '')
+    if message.lower().strip() in PULAR_COMMANDS:
+        show_review_menu(phone, json.loads(user['resume_data']))
+        return
+    current_experience = {'cargo': message}
+    update_user(phone, {'state': 'awaiting_experience_company', 'current_experience': json.dumps(current_experience)})
+    send_whatsapp_message(phone, "Entendido. E o nome da empresa?")
+
+@handle_state('awaiting_experience_company')
+def handle_exp_company(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '')
+    current_experience = json.loads(user.get('current_experience', '{}'))
+    current_experience['empresa'] = message
+    update_user(phone, {'state': 'awaiting_experience_period', 'current_experience': json.dumps(current_experience)})
+    send_whatsapp_message(phone, "Anotado. Qual foi o período? (Ex: 2020 - 2022)")
+
+@handle_state('awaiting_experience_period')
+def handle_exp_period(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '')
+    current_experience = json.loads(user.get('current_experience', '{}'))
+    current_experience['periodo'] = message
+    update_user(phone, {'state': 'awaiting_experience_description', 'current_experience': json.dumps(current_experience)})
+    send_whatsapp_message(phone, "Ok. Agora descreva brevemente suas responsabilidades e conquistas nesse cargo.")
+
+@handle_state('awaiting_experience_description')
+def handle_exp_description(user, message_data):
+    phone, message = user['phone'], message_data.get('text', '')
+    current_experience = json.loads(user.get('current_experience', '{}'))
+    current_experience['descricao'] = message
+    resume_data = json.loads(user.get('resume_data', '{}'))
+    if 'experiencias' not in resume_data or not isinstance(resume_data['experiencias'], list): resume_data['experiencias'] = []
+    resume_data['experiencias'].append(current_experience)
+    update_user(phone, {'state': 'awaiting_another_experience', 'resume_data': json.dumps(resume_data)})
+    send_whatsapp_message(phone, "Experiência adicionada! Deseja adicionar outra? (Responda com *sim* ou *não*)")
+
+@handle_state('awaiting_another_experience')
+def handle_another_experience(user, message_data):
+    phone, choice = user['phone'], message_data.get('text', '').lower().strip()
+    if choice == 'sim':
+        update_user(phone, {'state': 'awaiting_experience_job_title', 'current_experience': json.dumps({})})
+        send_whatsapp_message(phone, "Vamos lá. Qual era o seu cargo na próxima experiência?")
+    else:
+        update_user(phone, {'state': 'awaiting_improve_choice'})
+        send_whatsapp_message(phone, "Ok, terminamos as experiências. Gostaria que eu usasse IA para reescrever suas descrições de forma mais profissional? (Responda com *sim* ou *não*)")
+
+@handle_state('awaiting_improve_choice')
+def handle_improve_choice(user, message_data):
+    phone, choice = user['phone'], message_data.get('text', '').lower().strip()
+    resume_data = json.loads(user['resume_data'])
+    if choice == 'sim':
+        send_whatsapp_message(phone, "Excelente! Deixa comigo, estou otimizando seus textos... ✍️ Isso pode levar um instante.")
+        improved_experiences = improve_experience_descriptions(resume_data.get('experiencias', []))
+        resume_data['experiencias'] = improved_experiences
+        update_user(phone, {'resume_data': json.dumps(resume_data)})
+        send_whatsapp_message(phone, "Prontinho! Textos melhorados.")
+    else:
+        send_whatsapp_message(phone, "Sem problemas! Vamos para a revisão final.")
+    show_review_menu(phone, resume_data)
 
 def show_review_menu(phone, resume_data):
     review_text = "Ótimo, chegamos ao final! Revise seus dados. Se algo estiver errado, é só me dizer o número do item que deseja corrigir:\n\n"
@@ -524,8 +597,8 @@ def show_review_menu(phone, resume_data):
             display_value = str(value)
         review_text += f"*{i}. {friendly_name}:* {display_value}\n"
     review_text += "\nSe estiver tudo certo, digite *'finalizar'* para ir ao pagamento!"
-    send_whatsapp_message(phone, review_text)
     update_user(phone, {'state': 'awaiting_review_choice', 'editing_field': None})
+    send_whatsapp_message(phone, review_text)
 
 @handle_state('awaiting_review_choice')
 def handle_review_choice(user, message_data):
@@ -538,7 +611,6 @@ def handle_review_choice(user, message_data):
         send_whatsapp_message(phone, "Depois de pagar, é só me enviar a *foto do comprovante* que eu libero seus arquivos! ✨")
         update_user(phone, {'state': 'awaiting_payment_proof'})
         return
-        
     if message.isdigit() and 1 <= int(message) <= len(REVIEW_ORDER):
         item_index = int(message) - 1
         field_to_edit = REVIEW_ORDER[item_index]
@@ -556,7 +628,6 @@ def handle_correction_input(user, message_data):
     if not field_to_edit:
         handle_default(user, message_data)
         return
-
     resume_data = json.loads(user['resume_data'])
     resume_data[field_to_edit] = message
     update_user(phone, {'resume_data': json.dumps(resume_data)})
@@ -568,20 +639,15 @@ def handle_payment_proof(user, message_data):
     if 'image' in message_data and 'url' in message_data['image']:
         image_url = message_data['image']['url']
         send_whatsapp_message(phone, "Oba, recebi seu comprovante! 🕵️‍♂️ Analisando com a IA, só um segundo...")
-        
         analysis = analyze_pix_receipt(image_url)
         if analysis and analysis.get('verified'):
             send_whatsapp_message(phone, "Pagamento confirmado! ✅ Já estou preparando seus arquivos e te envio em instantes...")
-            
             user_data_to_pass = dict(user)
-            
             update_data = {'payment_verified': 1, 'state': 'delivering', 'payment_timestamp': datetime.now()}
             if user_data_to_pass['plan'] == 'assinatura':
                 update_data['subscription_valid_until'] = datetime.now() + timedelta(days=30)
-            
             update_user(phone, update_data)
-            user_data_to_pass.update(update_data) 
-
+            user_data_to_pass.update(update_data)
             run_long_task_in_background(target_func=deliver_final_product, args=(user_data_to_pass,))
         else:
             send_whatsapp_message(phone, "Hmm, não consegui confirmar o pagamento para o nome correto. Tente enviar uma imagem mais nítida do comprovante.")
@@ -589,10 +655,9 @@ def handle_payment_proof(user, message_data):
         send_whatsapp_message(phone, "Ainda não recebi a imagem. É só me enviar a foto do comprovante de pagamento.")
 
 def deliver_final_product(user_data, test_data=None, debug=False):
-    with app.app_context(): # Garante o contexto da aplicação para a thread
+    with app.app_context():
         phone, plan = user_data['phone'], user_data.get('plan')
         resume_data = test_data if test_data else json.loads(user_data.get('resume_data', '{}'))
-        
         if plan != 'assinatura' and not debug:
             if user_data.get('credits', 0) < 1:
                 send_whatsapp_message(phone, "Você não tem mais créditos. Digite 'oi' para ver os planos.")
@@ -603,12 +668,10 @@ def deliver_final_product(user_data, test_data=None, debug=False):
             send_whatsapp_message(phone, f"Preparando seu currículo... (Créditos restantes: {new_credits})")
         else:
              send_whatsapp_message(phone, "Preparando seu currículo...")
-
         template = user_data.get('template')
         pdf_path = os.path.join(TEMP_DIR, f"Curriculo_{resume_data.get('nome_completo', 'user').replace(' ', '_')}.pdf")
         generate_resume_pdf(resume_data, template, pdf_path)
-        send_whatsapp_document(phone, pdf_path, os.path.basename(pdf_path), "Seu currículo novinho em folha!")
-
+        send_whatsapp_message(phone, pdf_path, os.path.basename(pdf_path), "Seu currículo novinho em folha!")
         if plan in ['premium', 'revisao_humana', 'assinatura']:
             send_whatsapp_message(phone, "Gerando sua versão em Inglês...")
             english_data = translate_resume_data_to_english(resume_data)
@@ -617,18 +680,14 @@ def deliver_final_product(user_data, test_data=None, debug=False):
                 generate_resume_pdf(english_data, template, english_pdf_path)
                 send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), "Aqui está sua versão em Inglês!")
                 os.remove(english_pdf_path)
-        
         if plan == 'revisao_humana':
             send_whatsapp_message(ADMIN_PHONE_NUMBER, f"Nova revisão solicitada!\n\nCliente: {resume_data.get('nome_completo')}\nTelefone: {phone}\nPlano: Revisão Humana")
             send_whatsapp_document(ADMIN_PHONE_NUMBER, pdf_path, f"REVISAR_{os.path.basename(pdf_path)}")
             send_whatsapp_message(phone, "Sua solicitação de revisão foi enviada para nossa equipe! Em até 24h úteis um especialista entrará em contato. 👨‍💼")
-        
         os.remove(pdf_path)
-
         update_user(phone, {'state': 'awaiting_interview_prep_choice'})
         send_whatsapp_message(phone, "Seus arquivos foram entregues! 📄✨\n\nComo um bônus final, gostaria de gerar uma lista de perguntas de entrevista com base no seu currículo? (Responda com *sim* ou *não*)")
 
-# (Todos os outros handlers, como o de entrevista, permanecem os mesmos)
 @handle_state('awaiting_interview_prep_choice')
 def handle_interview_prep(user, message_data):
     phone, choice = user['phone'], message_data.get('text', '').lower().strip()
@@ -648,29 +707,24 @@ def handle_completed(user, message_data):
 
 def handle_default(user, message_data=None):
     phone = user['phone']
-    
     if user['plan'] == 'assinatura' and user['subscription_valid_until']:
         try:
             valid_until = datetime.fromisoformat(user['subscription_valid_until'])
             if datetime.now() < valid_until:
                 days_left = (valid_until - datetime.now()).days
                 send_whatsapp_message(phone, f"Olá de novo! Sua assinatura está ativa por mais {days_left} dias. 👍\nVamos criar uma nova versão do seu currículo.")
-                
-                update_user(phone, {'state': 'choosing_template'})
+                update_user(phone, {'state': 'choosing_template', 'resume_data': json.dumps({})}) # Limpa dados antigos
                 send_whatsapp_message(phone, "Qual dos 3 templates você gostaria de usar desta vez?")
                 return
         except (TypeError, ValueError):
             logging.error(f"Timestamp inválido para assinante {phone}")
-
     send_whatsapp_message(phone, "Vamos começar (ou recomeçar)! Por favor, escolha um dos nossos planos.")
     update_user(phone, {
-        'state': 'awaiting_plan_choice', 'resume_data': json.dumps({}),
-        'plan': 'none', 'template': 'none', 'payment_verified': 0,
-        'payment_timestamp': None, 'credits': 0, 'subscription_valid_until': None,
-        'current_experience': json.dumps({}), 'editing_field': None
+        'state': 'awaiting_plan_choice', 'resume_data': json.dumps({}), 'plan': 'none', 
+        'template': 'none', 'payment_verified': 0, 'payment_timestamp': None, 
+        'credits': 0, 'subscription_valid_until': None, 'current_experience': json.dumps({}), 'editing_field': None
     })
     show_payment_options(phone)
-
 
 # ==============================================================================
 # --- WEBHOOK e INICIALIZAÇÃO
@@ -687,15 +741,10 @@ def webhook():
         phone = data.get('phone')
         message_data = {}
         if data.get('text'):
-            if isinstance(data.get('text'), str):
-                message_data['text'] = data['text']
-            elif isinstance(data.get('text'), dict) and 'message' in data['text']:
-                message_data['text'] = data['text']['message']
-        elif data.get('type') == 'image' and data.get('imageUrl'):
-            message_data['image'] = {'url': data['imageUrl']}
-        elif data.get('image') and isinstance(data.get('image'), dict) and 'imageUrl' in data['image']:
-            message_data['image'] = {'url': data['image']['imageUrl']}
-
+            if isinstance(data.get('text'), str): message_data['text'] = data['text']
+            elif isinstance(data.get('text'), dict) and 'message' in data['text']: message_data['text'] = data['text']['message']
+        elif data.get('type') == 'image' and data.get('imageUrl'): message_data['image'] = {'url': data['imageUrl']}
+        elif data.get('image') and isinstance(data.get('image'), dict) and 'imageUrl' in data['image']: message_data['image'] = {'url': data['image']['imageUrl']}
         if phone and message_data:
             process_message(phone, message_data)
         else:
