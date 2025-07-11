@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# VERSÃO FINAL CORRIGIDA (09/07/2025) - TEMPLATES RESTAURADOS E BUGS ELIMINADOS
+# VERSÃO FINAL ESTÁVEL (11/07/2025) - CORREÇÃO DE FPDFEXCEPTION E RESTAURAÇÃO DE TEMPLATE
 
 # ==============================================================================
 # --- 1. IMPORTAÇÕES E CONFIGURAÇÕES INICIAIS
@@ -166,7 +166,6 @@ def get_openai_response(prompt_messages, is_json=False):
         return None
 
 def extract_and_format_info(field_key, question, user_message):
-    """Usa IA para extrair informação de forma inteligente e depois a formata."""
     system_prompt = "Você é um assistente que extrai a informação principal da resposta de um usuário, de forma limpa e direta, sem saudações ou frases adicionais. Apenas a informação pura."
     user_prompt_template = 'Pergunta: "{question}"\nResposta do usuário: "{user_message}"\n\nExtraia a informação relevante:'
 
@@ -264,6 +263,8 @@ def generate_template_moderno(data, path):
     pdf.add_font_setup(); pdf.add_page(); pdf.set_auto_page_break(auto=True, margin=15)
     SIDEBAR_COLOR, ACCENT_COLOR = (45, 52, 54), (26, 188, 156)
     lang = 'en' if 'full_name' in data else 'pt'
+    data_pt = data.get('pt_data', data)
+    data_en = data.get('en_data', data)
 
     pdf.set_fill_color(*SIDEBAR_COLOR); pdf.rect(0, 0, 70, 297, 'F')
     pdf.set_xy(10, 20); pdf.set_text_color(255, 255, 255)
@@ -277,19 +278,19 @@ def generate_template_moderno(data, path):
         pdf.ln(5)
 
     contact_list = [
-        data.get('cidade_estado') or data.get('city_state', ''),
-        data.get('telefone') or data.get('phone', ''),
-        data.get('email', '')
+        data_pt.get('cidade_estado') or data_en.get('city_state', ''),
+        data_pt.get('telefone') or data_en.get('phone', ''),
+        data_pt.get('email', '')
     ]
     add_sidebar_section("Contato" if lang == 'pt' else "Contact", [item for item in contact_list if item])
-    add_sidebar_section("Formação" if lang == 'pt' else "Education", [data.get('formacao')] if data.get('formacao') else [data.get('education')])
-    add_sidebar_section("Habilidades" if lang == 'pt' else "Skills", data.get('habilidades') or data.get('skills'))
-    add_sidebar_section("Cursos", data.get('cursos') or data.get('courses_certifications'))
+    add_sidebar_section("Formação" if lang == 'pt' else "Education", [data_pt.get('formacao')] if data_pt.get('formacao') else [data_en.get('education')])
+    add_sidebar_section("Habilidades" if lang == 'pt' else "Skills", data_pt.get('habilidades') or data_en.get('skills'))
+    add_sidebar_section("Cursos", data_pt.get('cursos') or data_en.get('courses_certifications'))
 
     pdf.set_xy(80, 20); pdf.set_text_color(40, 40, 40)
-    pdf.set_font(pdf.font_bold, 'B', 28); pdf.multi_cell(120, 11, data.get('nome_completo') or data.get('full_name'))
+    pdf.set_font(pdf.font_bold, 'B', 28); pdf.multi_cell(120, 11, data_pt.get('nome_completo') or data_en.get('full_name'))
     pdf.set_font(pdf.font_regular, '', 14); pdf.set_text_color(108, 122, 137); pdf.set_x(80)
-    pdf.cell(0, 8, data.get('cargo') or data.get('desired_role'), 0, 1, 'L'); pdf.ln(10)
+    pdf.cell(0, 8, data_pt.get('cargo') or data_en.get('desired_role'), 0, 1, 'L'); pdf.ln(10)
 
     def add_right_section(title, content):
         if not content: return
@@ -307,8 +308,8 @@ def generate_template_moderno(data, path):
         pdf.ln(6)
 
     title_map = {"resumo": "Resumo Profissional", "experiencias": "Experiência Profissional"} if lang == 'pt' else {"professional_summary": "Professional Summary", "work_experience": "Work Experience"}
-    add_right_section(title_map.get('resumo', 'Resumo'), data.get('resumo') or data.get('professional_summary'))
-    add_right_section(title_map.get('experiencias', 'Experiências'), data.get('experiencias') or data.get('work_experience'))
+    add_right_section(title_map.get('resumo', 'Resumo'), data_pt.get('resumo') or data_en.get('professional_summary'))
+    add_right_section(title_map.get('experiencias', 'Experiências'), data_pt.get('experiencias') or data_en.get('work_experience'))
     pdf.output(path)
 
 def generate_template_classico(data, path):
@@ -330,13 +331,14 @@ def generate_template_classico(data, path):
         
         if isinstance(content, list) and all(isinstance(i, dict) for i in content): # Experiências
             for item in content:
-                pdf.set_font(pdf.font_bold, 'B', 10); pdf.cell(0, 6, f"{item.get('cargo', '')}, {item.get('empresa', '')}", 0, 1)
-                pdf.set_font(pdf.font_regular, 'I', 9); pdf.multi_cell(0, 5, item.get('periodo', ''), 0, 'L'); pdf.ln(1)
-                pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"  • {item.get('descricao', '')}"); pdf.ln(3)
+                pdf.set_x(pdf.l_margin); pdf.set_font(pdf.font_bold, 'B', 10); pdf.cell(0, 6, f"{item.get('cargo', '')}, {item.get('empresa', '')}", 0, 1)
+                pdf.set_x(pdf.l_margin); pdf.set_font(pdf.font_regular, 'I', 9); pdf.multi_cell(0, 5, item.get('periodo', ''), 0, 'L'); pdf.ln(1)
+                pdf.set_x(pdf.l_margin + 3); pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"• {item.get('descricao', '')}"); pdf.ln(3)
         elif isinstance(content, list): # Habilidades, Cursos
-             for item in content: pdf.multi_cell(0, 5, f"• {item}")
+             for item in content:
+                if item: pdf.set_x(pdf.l_margin); pdf.multi_cell(0, 5, f"• {item}")
         else: # Resumo, Formação
-            pdf.multi_cell(0, 6, content)
+            pdf.set_x(pdf.l_margin); pdf.multi_cell(0, 6, content)
         pdf.ln(4)
         
     title_map = {"resumo": "Resumo", "experiencias": "Experiência Profissional", "formacao": "Formação Acadêmica", "habilidades": "Habilidades", "cursos": "Cursos e Certificações"} if lang == 'pt' else {"professional_summary": "Summary", "work_experience": "Work Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses & Certifications"}
@@ -353,13 +355,11 @@ def generate_template_criativo(data, path):
     HEADER_COLOR = (211, 84, 0)
     lang = 'en' if 'full_name' in data else 'pt'
 
-    # --- Faixa Laranja do Cabeçalho ---
     pdf.set_fill_color(*HEADER_COLOR); pdf.rect(0, 10, 210, 35, 'F')
     pdf.set_y(18); pdf.set_font(pdf.font_bold, 'B', 24); pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 10, data.get('nome_completo') or data.get('full_name', ''), 0, 1, 'C')
     pdf.set_font(pdf.font_regular, '', 12); pdf.cell(0, 8, data.get('cargo') or data.get('desired_role', ''), 0, 1, 'C')
     
-    # --- Contato Abaixo do Nome ---
     pdf.set_y(pdf.get_y() + 8)
     pdf.set_font(pdf.font_regular, '', 9); pdf.set_text_color(80, 80, 80)
     contato = f"{data.get('cidade_estado', '')} | {data.get('telefone', '')} | {data.get('email', '')}"
@@ -372,16 +372,16 @@ def generate_template_criativo(data, path):
         pdf.cell(0, 12, title.upper(), 0, 1, 'L'); pdf.ln(1)
         pdf.set_font(pdf.font_regular, '', 10); pdf.set_text_color(50, 50, 50)
         
-        if isinstance(content, list) and all(isinstance(i, dict) for i in content): # Experiências
+        if isinstance(content, list) and all(isinstance(i, dict) for i in content):
             for item in content:
-                pdf.set_font(pdf.font_bold, 'B', 10); pdf.multi_cell(0, 6, f"{item.get('cargo', '')} | {item.get('empresa', '')}", 0, 'L')
-                pdf.set_font(pdf.font_regular, 'I', 9); pdf.multi_cell(0, 6, item.get('periodo', ''), 0, 'L'); pdf.ln(1)
-                pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"• {item.get('descricao', '')}"); pdf.ln(3)
-        elif isinstance(content, list): # Habilidades, Cursos, etc
+                pdf.set_x(pdf.l_margin); pdf.set_font(pdf.font_bold, 'B', 10); pdf.multi_cell(0, 6, f"{item.get('cargo', '')} | {item.get('empresa', '')}", 0, 'L')
+                pdf.set_x(pdf.l_margin); pdf.set_font(pdf.font_regular, 'I', 9); pdf.multi_cell(0, 6, item.get('periodo', ''), 0, 'L'); pdf.ln(1)
+                pdf.set_x(pdf.l_margin + 3); pdf.set_font(pdf.font_regular, '', 10); pdf.multi_cell(0, 5, f"• {item.get('descricao', '')}"); pdf.ln(3)
+        elif isinstance(content, list):
             for item in content:
-                pdf.multi_cell(0, 5, f"• {item}")
-        else: # Resumo, Formação
-            pdf.multi_cell(0, 5, content)
+                if item: pdf.set_x(pdf.l_margin); pdf.multi_cell(0, 5, f"• {item}")
+        else:
+            pdf.set_x(pdf.l_margin); pdf.multi_cell(0, 5, content)
         pdf.ln(5)
 
     title_map = {"resumo": "Sobre Mim", "experiencias": "Experiência", "formacao": "Educação", "habilidades": "Competências", "cursos": "Cursos"} if lang == 'pt' else {"professional_summary": "About Me", "work_experience": "Experience", "education": "Education", "skills": "Skills", "courses_certifications": "Courses"}
@@ -738,7 +738,9 @@ def deliver_final_product(user_data, test_data=None, debug=False):
                 generate_resume_pdf(english_data, template, english_pdf_path)
                 send_whatsapp_document(phone, english_pdf_path, os.path.basename(english_pdf_path), "Aqui está sua versão em Inglês!")
                 os.remove(english_pdf_path)
-        
+            else:
+                send_whatsapp_message(phone, "Desculpe, não foi possível gerar a versão em inglês do seu currículo neste momento.")
+
         if plan == 'revisao_humana':
             send_whatsapp_message(ADMIN_PHONE_NUMBER, f"Nova revisão solicitada!\n\nCliente: {resume_data.get('nome_completo')}\nTelefone: {phone}\nPlano: Revisão Humana")
             send_whatsapp_document(ADMIN_PHONE_NUMBER, pdf_path, f"REVISAR_{os.path.basename(pdf_path)}")
