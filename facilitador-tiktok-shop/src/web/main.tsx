@@ -1,6 +1,7 @@
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
+import { BrowserRouter, MemoryRouter, Navigate, Route, Routes, useLocation } from "react-router";
+import { DEMO } from "./api.ts";
 import "./styles.css";
 import { SessionProvider } from "./session.tsx";
 import { LiquidGlassDefs, usePointerGlow } from "./components/fx.tsx";
@@ -27,11 +28,26 @@ function ScrollToTop() {
   return null;
 }
 
+// Na demonstração (prévia publicada) não há servidor: rotas ficam na memória e
+// diálogos de confirmação, que a prévia bloqueia, são aceitos direto.
+const Router = DEMO ? MemoryRouter : BrowserRouter;
+if (DEMO) window.confirm = () => true;
+
+function DemoBadge() {
+  if (!DEMO) return null;
+  return (
+    <div className="demo-badge glass" role="note">
+      Demonstração · login com qualquer e-mail · nada é cobrado
+    </div>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
+    <Router>
       <SessionProvider>
         <Effects />
+        <DemoBadge />
         <ScrollToTop />
         <Routes>
           <Route element={<PublicLayout />}>
@@ -55,6 +71,6 @@ createRoot(document.getElementById("root")!).render(
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </SessionProvider>
-    </BrowserRouter>
+    </Router>
   </StrictMode>,
 );

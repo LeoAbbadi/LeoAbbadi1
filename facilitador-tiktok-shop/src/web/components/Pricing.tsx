@@ -2,13 +2,15 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { api } from "../api.ts";
+import { useOpenLink } from "./ui.tsx";
 import { useSession } from "../session.tsx";
 import { PLANS, formatBRL, type BillingPeriod, type PlanId } from "../../shared/plans.ts";
 
 export function Pricing() {
   const [period, setPeriod] = useState<BillingPeriod>("monthly");
-  const { me } = useSession();
+  const { me, refresh } = useSession();
   const navigate = useNavigate();
+  const openLink = useOpenLink();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +21,8 @@ export function Pricing() {
     setError(null);
     try {
       const { url } = await api<{ url: string }>("/api/billing/checkout", { body: { plan, period } });
-      window.location.href = url;
+      if (url.startsWith("app:")) await refresh();
+      openLink(url);
     } catch (err) {
       setError((err as Error).message);
       setBusy(null);

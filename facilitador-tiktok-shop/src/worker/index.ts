@@ -212,8 +212,8 @@ async function loop(slot: number): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  await migrate();
+/** Liga o worker: fila de lotes + limpeza dos vídeos vencidos. Termina quando receber SIGTERM. */
+export async function startWorker(): Promise<void> {
   const timer = setInterval(() => cleanupExpired().catch((e) => console.error("limpeza:", e.message)), 10 * 60_000);
   void cleanupExpired().catch(() => {});
   const shutdown = () => {
@@ -225,6 +225,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   process.on("SIGINT", shutdown);
   console.log(`Worker de vídeo iniciado (${config.workerConcurrency} em paralelo).`);
   await Promise.all(Array.from({ length: Math.max(1, config.workerConcurrency) }, (_, i) => loop(i + 1)));
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await migrate();
+  await startWorker();
   await pool.end();
 }
 

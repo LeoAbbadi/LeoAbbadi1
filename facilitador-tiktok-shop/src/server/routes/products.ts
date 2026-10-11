@@ -5,6 +5,7 @@ import { z } from "zod";
 import { HttpError, effectivePlan, isAdmin, requireUser } from "../auth.ts";
 import { one, query, tx } from "../db.ts";
 import { PLANS } from "../../shared/plans.ts";
+import { growthPct } from "../../shared/samples.ts";
 
 const listQuery = z.object({
   country: z.enum(["BR", "US"]).default("BR"),
@@ -156,12 +157,6 @@ export async function productRoutes(app: FastifyInstance) {
     });
     return { imported: rows.length };
   });
-}
-
-export function growthPct(sales1d: number, sales7d: number): number {
-  const avg = sales7d / 7;
-  if (avg <= 0) return sales1d > 0 ? 100 : 0;
-  return Math.round(((sales1d - avg) / avg) * 1000) / 10;
 }
 
 // ----- CSV -----

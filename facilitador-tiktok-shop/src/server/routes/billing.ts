@@ -21,7 +21,7 @@ export async function billingRoutes(app: FastifyInstance) {
     const priceKey = `${plan}_${period}`;
 
     if (!stripe) {
-      if (config.isProduction) throw new HttpError(503, "Pagamentos ainda não configurados.");
+      if (config.isProduction && !config.demoBilling) throw new HttpError(503, "Pagamentos ainda não configurados.");
       const renews = new Date();
       renews.setMonth(renews.getMonth() + (period === "annual" ? 12 : 1));
       await query("UPDATE users SET plan = $2, plan_period = $3, plan_status = 'active', plan_renews_at = $4 WHERE id = $1", [

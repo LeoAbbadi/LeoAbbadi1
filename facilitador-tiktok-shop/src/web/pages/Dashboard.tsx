@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api, type Product, type ProjectSummary } from "../api.ts";
-import { ErrorBox, Meter, PageHead, useLoad } from "../components/ui.tsx";
+import { ErrorBox, Meter, PageHead, useLoad, useOpenLink } from "../components/ui.tsx";
 import { useSession } from "../session.tsx";
 import { compactBRL, date } from "../format.ts";
 import { Growth, Thumb } from "./Products.tsx";
@@ -92,6 +92,7 @@ export function DashboardPage() {
 
 export function AccountPage() {
   const { me, logout } = useSession();
+  const openLink = useOpenLink();
   const [params] = useSearchParams();
   const [error, setError] = useState<unknown>(null);
   if (!me) return null;
@@ -123,7 +124,7 @@ export function AccountPage() {
                 onClick={async () => {
                   try {
                     const { url } = await api<{ url: string }>("/api/billing/portal", { body: {} });
-                    window.location.href = url;
+                    openLink(url);
                   } catch (err) {
                     setError(err);
                   }

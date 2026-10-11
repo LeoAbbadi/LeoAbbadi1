@@ -1,0 +1,37 @@
+# Blueprint do Render para testar o Facilitador TikTok Shop no plano grátis.
+# No Render: New > Blueprint > escolha este repositório e a branch.
+# Um serviço só (site + worker de vídeo) e um Postgres grátis.
+services:
+  - type: web
+    name: facilitador
+    runtime: docker
+    plan: free
+    rootDir: facilitador-tiktok-shop
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: EMBEDDED_WORKER
+        value: "true"
+      - key: DEMO_BILLING
+        value: "true"
+      - key: STORAGE_DRIVER
+        value: local
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: facilitador-db
+          property: connectionString
+      - key: APP_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+databases:
+  - name: facilitador-db
+    plan: free
+    databaseName: fts
+    user: fts

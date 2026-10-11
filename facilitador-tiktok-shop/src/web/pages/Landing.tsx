@@ -6,6 +6,7 @@ import { Coverflow } from "../components/Coverflow.tsx";
 import { HeroScene, ProductArt } from "../components/Scene.tsx";
 import { Counter, EASE, Reveal, SplitText, Tilt } from "../components/fx.tsx";
 import { Icon } from "../components/Icons.tsx";
+import { useScrollTo } from "../components/ui.tsx";
 import { LABEL_INFO, planVideos } from "../../shared/combos.ts";
 
 const FAQ = [
@@ -171,13 +172,14 @@ function FlightPath() {
 }
 
 function ProductRail() {
+  const scrollTo = useScrollTo();
   const rail = useRef<HTMLDivElement>(null);
   const scroll = (dir: number) => rail.current?.scrollBy({ left: dir * 420, behavior: "smooth" });
   return (
     <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 1, delay: 1.1, ease: EASE }}>
       <div className="rail-head">
         <h3>Em alta no TikTok Shop</h3>
-        <a href="#produtos" className="accent small" style={{ textDecoration: "none" }}>Ver todos</a>
+        <a href="#produtos" className="accent small" style={{ textDecoration: "none" }} onClick={(e) => { e.preventDefault(); scrollTo("produtos"); }}>Ver todos</a>
       </div>
       <div className="rail-wrap">
         <button className="btn icon rail-arrow l" onClick={() => scroll(-1)} aria-label="Voltar"><Icon.ArrowLeft /></button>
@@ -209,6 +211,7 @@ function ProductRail() {
 }
 
 function Hero() {
+  const scrollTo = useScrollTo();
   return (
     <section className="hero">
       <div className="hero-scene"><HeroScene /></div>
@@ -233,7 +236,7 @@ function Hero() {
             <Link to="/criar-conta" className="btn primary big">
               Começar grátis <Icon.Arrow />
             </Link>
-            <a href="#multiplicador" className="play">
+            <a href="#multiplicador" className="play" onClick={(e) => { e.preventDefault(); scrollTo("multiplicador"); }}>
               <span className="ring glass"><Icon.Play /></span>
               <span>
                 <strong>Ver em ação</strong>

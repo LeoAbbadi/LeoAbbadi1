@@ -1,6 +1,11 @@
 import type { PlanId } from "../shared/plans.ts";
 import type { OriginalityLabel } from "../shared/combos.ts";
 
+import { demoApi, demoUpload } from "./demo/mock.ts";
+
+/** Versão de demonstração (sem servidor): build com VITE_DEMO=1 */
+export const DEMO = import.meta.env.VITE_DEMO === "1";
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -11,6 +16,13 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  if (DEMO) {
+    try {
+      return await demoApi<T>(path, init);
+    } catch (err) {
+      throw new ApiError((err as { status?: number }).status ?? 500, (err as Error).message);
+    }
+  }
   const res = await fetch(path, {
     method: init.method ?? (init.body === undefined ? "GET" : "POST"),
     headers: init.body === undefined ? undefined : { "content-type": "application/json" },
@@ -24,6 +36,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 
 /** Envia o arquivo direto para o armazenamento, com progresso. */
 export function uploadFile(url: string, file: File, onProgress: (pct: number) => void): Promise<void> {
+  if (DEMO) return demoUpload(url, file, onProgress);
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
@@ -104,6 +117,8 @@ export interface Output {
   durationS: number | null;
   url: string | null;
   downloadUrl: string | null;
+  /** só na demonstração: os pedaços tocados em sequência */
+  sequence?: string[];
 }
 
 export interface BatchDetail {

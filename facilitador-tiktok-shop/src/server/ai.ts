@@ -6,6 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { config } from "./config.ts";
+import { sampleScript } from "../shared/samples.ts";
 
 export const scriptInput = z.object({
   kind: z.enum(["videos", "live"]),
@@ -125,46 +126,5 @@ export async function generateScript(input: ScriptInput): Promise<ScriptResult> 
 }
 
 function demoScript(input: ScriptInput): ScriptResult {
-  const p = input.productName;
-  const base = { model: "exemplo-sem-ia", inputTokens: 0, outputTokens: 0 };
-  if (input.kind === "videos") {
-    const techniques = [
-      "curiosidade",
-      "dor",
-      "polêmica leve",
-      "prova visual",
-      "pergunta",
-      "lista",
-      "antes e depois",
-      "segredo",
-      "urgência",
-      "identificação",
-    ];
-    return {
-      ...base,
-      output: {
-        hooks: techniques.map((t, i) => ({ text: `[Exemplo ${i + 1}] Gancho de ${t} para ${p}`, technique: t })),
-        bodies: ["Problema que resolve", "Demonstração", "Comparação", "Detalhe de qualidade", "Rotina de uso"].map(
-          (title) => ({ title, text: `[Exemplo] Mostre ${p}: ${title.toLowerCase()}.` }),
-        ),
-        ctas: [1, 2, 3].map((i) => ({ text: `[Exemplo ${i}] Toca no carrinho laranja e garante o seu ${p}.` })),
-        recordingTips: ["Configure ANTHROPIC_API_KEY para gerar roteiros de verdade."],
-      },
-    };
-  }
-  const stages = ["abertura", "dor", "desejo", "detalhe", "cta", "interacao"] as const;
-  return {
-    ...base,
-    output: {
-      title: `Live: ${p}`,
-      blocks: Array.from({ length: Math.ceil(input.liveMinutes / 10) }, (_, i) => ({
-        minute: i * 10,
-        stage: stages[i % stages.length]!,
-        title: `Bloco ${i + 1}`,
-        text: `[Exemplo] Fala do bloco ${i + 1} sobre ${p}.`,
-      })),
-      objections: [{ question: "Chega rápido?", answer: "[Exemplo] Responda com o prazo real da loja." }],
-      checklist: ["Configure ANTHROPIC_API_KEY para gerar roteiros de verdade."],
-    },
-  };
+  return { output: sampleScript(input), model: "exemplo-sem-ia", inputTokens: 0, outputTokens: 0 };
 }

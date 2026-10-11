@@ -2,22 +2,23 @@ import { useState } from "react";
 import { Link, Navigate, NavLink, useLocation, useOutlet } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useSession } from "../session.tsx";
-import { Brand, Loading } from "./ui.tsx";
+import { Brand, Loading, useScrollTo } from "./ui.tsx";
 import { Aurora, EASE } from "./fx.tsx";
 import { Icon } from "./Icons.tsx";
 import { PLANS } from "../../shared/plans.ts";
 
 const PUBLIC_LINKS = [
-  { href: "/#como-funciona", label: "Como funciona" },
-  { href: "/#multiplicador", label: "Multiplicador" },
-  { href: "/#produtos", label: "Produtos" },
-  { href: "/planos", label: "Planos" },
-  { href: "/#faq", label: "Dúvidas" },
+  { section: "como-funciona", label: "Como funciona" },
+  { section: "multiplicador", label: "Multiplicador" },
+  { section: "produtos", label: "Produtos" },
+  { section: "planos", label: "Planos" },
+  { section: "faq", label: "Dúvidas" },
 ];
 
 function TopBar() {
   const { me } = useSession();
   const [hover, setHover] = useState<number | null>(null);
+  const scrollTo = useScrollTo();
   return (
     <motion.header
       className="topbar"
@@ -30,7 +31,15 @@ function TopBar() {
           <Brand />
           <nav className="nav-links" onPointerLeave={() => setHover(null)}>
             {PUBLIC_LINKS.map((l, i) => (
-              <a key={l.href} href={l.href} onPointerEnter={() => setHover(i)}>
+              <a
+                key={l.section}
+                href={`#${l.section}`}
+                onPointerEnter={() => setHover(i)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  scrollTo(l.section);
+                }}
+              >
                 {hover === i && (
                   <motion.span layoutId="nav-hover" className="nav-hover" transition={{ type: "spring", stiffness: 380, damping: 32 }} />
                 )}

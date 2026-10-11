@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { LogoMark } from "./Icons.tsx";
 
 export function Brand() {
@@ -103,4 +103,24 @@ export function CopyButton({ text, label = "Copiar" }: { text: string; label?: s
       {done ? "Copiado!" : label}
     </button>
   );
+}
+
+/** Rola até uma seção da página inicial; funciona com qualquer tipo de rota. */
+export function useScrollTo() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  return (id: string) => {
+    const go = () => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (pathname === "/") go();
+    else {
+      navigate("/");
+      setTimeout(go, 350);
+    }
+  };
+}
+
+/** Abre um link vindo da API: "app:/rota" navega dentro do site, o resto troca de página. */
+export function useOpenLink() {
+  const navigate = useNavigate();
+  return (url: string) => (url.startsWith("app:") ? navigate(url.slice(4)) : window.location.assign(url));
 }

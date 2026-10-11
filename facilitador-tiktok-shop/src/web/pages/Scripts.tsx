@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { api, type LiveScript, type ScriptDetail, type ScriptSummary, type VideoScript } from "../api.ts";
+import { api, DEMO, type LiveScript, type ScriptDetail, type ScriptSummary, type VideoScript } from "../api.ts";
 import { CopyButton, ErrorBox, Loading, PageHead, useLoad } from "../components/ui.tsx";
 import { useSession } from "../session.tsx";
 import { date } from "../format.ts";
@@ -157,9 +157,11 @@ function VideosView({ s, out }: { s: ScriptDetail; out: VideoScript }) {
         actions={
           <>
             <CopyButton text={all} label="Copiar tudo" />
-            <button className="btn no-print" onClick={() => window.print()}>
-              Imprimir / PDF
-            </button>
+            {!DEMO && (
+              <button className="btn no-print" onClick={() => window.print()}>
+                Imprimir / PDF
+              </button>
+            )}
             <Link className="btn primary no-print" to="/app/multiplicador">
               Ir para o Multiplicador
             </Link>
@@ -241,9 +243,11 @@ function LiveView({ s, out }: { s: ScriptDetail; out: LiveScript }) {
         sub={`Live de ${s.input.liveMinutes} minutos · ${s.product_name}`}
         actions={
           <>
-            <button className="btn no-print" onClick={() => window.print()}>
-              Imprimir / PDF
-            </button>
+            {!DEMO && (
+              <button className="btn no-print" onClick={() => window.print()}>
+                Imprimir / PDF
+              </button>
+            )}
             <button className="btn primary no-print" onClick={() => setPrompter(true)}>
               Abrir teleprompter
             </button>

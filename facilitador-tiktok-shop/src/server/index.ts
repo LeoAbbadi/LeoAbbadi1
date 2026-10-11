@@ -52,4 +52,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const app = await buildServer();
   await app.listen({ port: config.port, host: "0.0.0.0" });
   console.log(`API rodando em http://localhost:${config.port}`);
+  if (config.embeddedWorker) {
+    const { startWorker } = await import("../worker/index.ts");
+    void startWorker();
+  }
 }

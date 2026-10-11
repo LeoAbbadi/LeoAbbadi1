@@ -1,5 +1,38 @@
 # Publicando o site
 
+## Testar antes de pagar
+
+Três jeitos, do mais rápido ao mais completo:
+
+**1. Demonstração no navegador (já está no ar, grátis).**
+Roda sem servidor: login com qualquer e-mail, envio de vídeos, geração (tocada em
+sequência), produtos, roteiros e planos. Nada é salvo de verdade. Para gerar de novo:
+`npm run build:demo` cria `dist-demo/facilitador-demo.html`.
+
+**2. Render, plano grátis (site de verdade, de graça).**
+O arquivo `render.yaml` na raiz do repositório monta tudo sozinho:
+1. Crie uma conta em render.com e conecte o GitHub.
+2. New → Blueprint → escolha o repositório `LeoAbbadi1` e a branch do projeto.
+3. Confirme. Em ~10 minutos o site fica no endereço `https://facilitador-xxxx.onrender.com`.
+4. Em Environment, preencha `APP_URL` com esse endereço (e `ANTHROPIC_API_KEY` se quiser roteiros de verdade).
+
+Limites do grátis: o site "dorme" depois de 15 minutos sem visita (a primeira abertura
+demora ~1 minuto), a CPU é fraca (um lote de 150 vídeos pode levar bem mais tempo),
+os vídeos somem quando o serviço reinicia e o banco grátis expira em 30 dias.
+Serve para testar e mostrar, não para clientes. O botão de assinar ativa o plano sem
+cobrar (`DEMO_BILLING=true`).
+
+**3. Railway com o crédito de teste.**
+Contas novas ganham um crédito único de US$ 5, que dá para alguns dias ou semanas de
+teste com CPU de verdade. Use o passo a passo abaixo com um serviço só:
+`EMBEDDED_WORKER=true` e `DEMO_BILLING=true`. Depois o plano Hobby custa US$ 5/mês
+com US$ 5 de uso incluídos.
+
+Confira as condições atuais nas páginas de preço do Render e da Railway antes de decidir:
+elas mudam com frequência.
+
+## Publicação para valer
+
 Arquitetura recomendada para começar (simples e barata):
 
 | Peça | Serviço | Para quê |

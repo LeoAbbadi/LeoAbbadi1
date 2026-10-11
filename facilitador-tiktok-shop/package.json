@@ -18,7 +18,8 @@
     "worker": "tsx src/worker/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
-    "custos": "tsx scripts/custos.ts"
+    "custos": "tsx scripts/custos.ts",
+    "build:demo": "node scripts/build-demo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

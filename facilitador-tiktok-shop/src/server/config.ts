@@ -24,6 +24,8 @@ export const config = {
   anthropicApiKey: str("ANTHROPIC_API_KEY"),
   anthropicModel: str("ANTHROPIC_MODEL", "claude-opus-5-5"),
 
+  // true = sem Stripe, o botão de assinar ativa o plano na hora (só para testes)
+  demoBilling: str("DEMO_BILLING") === "true",
   stripe: {
     secretKey: str("STRIPE_SECRET_KEY"),
     webhookSecret: str("STRIPE_WEBHOOK_SECRET"),
@@ -35,6 +37,8 @@ export const config = {
   },
 
   workerConcurrency: Number(str("WORKER_CONCURRENCY", "1")),
+  // true = o próprio servidor do site também monta os vídeos (um serviço só, bom para testar de graça)
+  embeddedWorker: str("EMBEDDED_WORKER") === "true",
   outputRetentionDays: Number(str("OUTPUT_RETENTION_DAYS", "7")),
   adminEmails: str("ADMIN_EMAILS")
     .split(",")

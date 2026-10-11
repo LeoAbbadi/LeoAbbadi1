@@ -49,6 +49,13 @@ Planos sugeridos: **Grátis** (20 vídeos), **Criador R$ 49/mês** (300 vídeos)
 **Pro R$ 89/mês ou R$ 597/ano** (1.500 vídeos). Margem de 49% a 95% por cliente,
 dependendo do uso e do modelo de IA. Os valores ficam em `src/shared/plans.ts`.
 
+## Testar sem pagar
+
+- **Demonstração no navegador**: `npm run build:demo` gera um HTML único que roda sem
+  servidor (publicado como prévia privada no Claude).
+- **Render grátis**: `render.yaml` na raiz do repositório sobe site + worker + banco no
+  plano gratuito. Passo a passo em [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Rodando no computador
 
 Requer Node.js 22+, Postgres 16 e FFmpeg (ou só Docker).
