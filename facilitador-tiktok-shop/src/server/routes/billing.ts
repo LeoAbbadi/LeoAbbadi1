@@ -30,7 +30,7 @@ export async function billingRoutes(app: FastifyInstance) {
         period,
         renews,
       ]);
-      return { url: `${config.appUrl}/app/conta?assinatura=ok` };
+      return { url: "app:/app/conta?assinatura=ok" };
     }
 
     const price = config.stripe.prices[priceKey];

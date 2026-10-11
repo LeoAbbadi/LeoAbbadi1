@@ -51,6 +51,9 @@ dependendo do uso e do modelo de IA. Os valores ficam em `src/shared/plans.ts`.
 
 ## Testar sem pagar
 
+- **Gerando vídeos de verdade, de graça (GitHub Codespaces)**:
+  [abrir no Codespaces](https://codespaces.new/LeoAbbadi/LeoAbbadi1?ref=claude/video-editing-ai-platform-u0fifg).
+  Liga site, banco e FFmpeg sozinho. Guia: [docs/TESTAR-GRATIS.md](docs/TESTAR-GRATIS.md).
 - **Demonstração no navegador**: `npm run build:demo` gera um HTML único que roda sem
   servidor (publicado como prévia privada no Claude).
 - **Render grátis**: `render.yaml` na raiz do repositório sobe site + worker + banco no

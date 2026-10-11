@@ -1,0 +1,16 @@
+{
+  // Ambiente de teste grátis no GitHub Codespaces: liga banco, FFmpeg e o site
+  // sozinho e gera vídeos de verdade sem pagar nada (dentro da cota grátis do GitHub).
+  "name": "Facilitador TikTok Shop (teste grátis)",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "hostRequirements": { "cpus": 2 },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postAttachCommand": "bash .devcontainer/start.sh",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Facilitador", "onAutoForward": "openBrowser" }
+  },
+  "customizations": {
+    "codespaces": { "openFiles": ["facilitador-tiktok-shop/docs/TESTAR-GRATIS.md"] }
+  }
+}
