@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { motion } from "motion/react";
 import { api } from "../api.ts";
 import { useSession } from "../session.tsx";
 import { PLANS, formatBRL, type BillingPeriod, type PlanId } from "../../shared/plans.ts";
@@ -33,12 +34,12 @@ export function Pricing() {
     <div className="stack" style={{ gap: 28 }}>
       <div className="row" style={{ justifyContent: "center" }}>
         <div className="toggle" role="tablist">
-          <button className={period === "monthly" ? "on" : ""} onClick={() => setPeriod("monthly")}>
-            Mensal
-          </button>
-          <button className={period === "annual" ? "on" : ""} onClick={() => setPeriod("annual")}>
-            Anual <span className="mint small">economize {formatBRL(annualSaving)}</span>
-          </button>
+          {(["monthly", "annual"] as const).map((p) => (
+            <button key={p} className={period === p ? "on" : ""} onClick={() => setPeriod(p)}>
+              {period === p && <motion.span layoutId="price-toggle" className="toggle-bg" transition={{ type: "spring", stiffness: 420, damping: 34 }} />}
+              {p === "monthly" ? "Mensal" : <>Anual <span className="mint small">economize {formatBRL(annualSaving)}</span></>}
+            </button>
+          ))}
         </div>
       </div>
       {error && <div className="alert error">{error}</div>}
@@ -48,7 +49,7 @@ export function Pricing() {
           const unavailable = period === "annual" && plan.id === "starter";
           const current = me?.user.plan === plan.id;
           return (
-            <div key={plan.id} className={`card pad-lg price-card ${plan.id === "pro" ? "featured" : ""}`}>
+            <motion.div key={plan.id} className={`card pad-lg price-card ${plan.id === "pro" ? "featured" : ""}`} whileHover={{ y: -8 }} transition={{ type: "spring", stiffness: 300, damping: 24 }}>
               {plan.id === "pro" && <span className="ribbon">Mais completo</span>}
               <div>
                 <h3 style={{ marginBottom: 4 }}>{plan.name}</h3>
@@ -96,7 +97,7 @@ export function Pricing() {
                         ? "Começar grátis"
                         : `Assinar ${plan.name}`}
               </button>
-            </div>
+            </motion.div>
           );
         })}
       </div>

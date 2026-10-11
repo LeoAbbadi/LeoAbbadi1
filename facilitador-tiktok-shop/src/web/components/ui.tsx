@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
+import { LogoMark } from "./Icons.tsx";
 
 export function Brand() {
   return (
     <Link to="/" className="brand">
-      <span className="brand-mark" aria-hidden>
-        <svg width="18" height="18" viewBox="0 0 64 64">
-          <path d="M8 18h18v28H8zM32 8h22v18H32zM32 32h22v24H32z" fill="#1a0a04" />
-        </svg>
+      <span className="brand-mark">
+        <LogoMark />
       </span>
       <span>
-        Facilitador
-        <small>TikTok Shop</small>
+        <span className="brand-name">Facilitador</span>
+        <small>Grave. Multiplique. Venda.</small>
       </span>
     </Link>
   );

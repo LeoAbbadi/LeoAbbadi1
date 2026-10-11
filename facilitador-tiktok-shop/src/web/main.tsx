@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
 import "./styles.css";
 import { SessionProvider } from "./session.tsx";
+import { LiquidGlassDefs, usePointerGlow } from "./components/fx.tsx";
 import { AppLayout, PublicLayout } from "./components/Layouts.tsx";
 import { Landing, PricingPage } from "./pages/Landing.tsx";
 import { AuthPage } from "./pages/Auth.tsx";
@@ -11,6 +12,11 @@ import { ProjectPage, ProjectsPage } from "./pages/Multiplicador.tsx";
 import { BatchPage } from "./pages/Batch.tsx";
 import { ProductPage, ProductsPage } from "./pages/Products.tsx";
 import { ScriptPage, ScriptsPage } from "./pages/Scripts.tsx";
+
+function Effects() {
+  usePointerGlow();
+  return <LiquidGlassDefs />;
+}
 
 function ScrollToTop() {
   const { pathname, hash } = useLocation();
@@ -25,6 +31,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <SessionProvider>
+        <Effects />
         <ScrollToTop />
         <Routes>
           <Route element={<PublicLayout />}>

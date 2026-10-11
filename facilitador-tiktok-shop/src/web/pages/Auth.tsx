@@ -3,6 +3,9 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api.ts";
 import { Brand, ErrorBox } from "../components/ui.tsx";
 import { useSession } from "../session.tsx";
+import { motion } from "motion/react";
+import { Aurora, EASE } from "../components/fx.tsx";
+import { HeroScene } from "../components/Scene.tsx";
 
 export function AuthPage({ mode }: { mode: "login" | "signup" }) {
   const { me, refresh } = useSession();
@@ -37,12 +40,22 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
 
   return (
     <div className="auth-wrap">
-      <div className="auth-card stack" style={{ gap: 20 }}>
+      <Aurora />
+      <div className="hero-scene" style={{ position: "fixed", inset: 0, zIndex: -1, opacity: 0.55 }}>
+        <HeroScene />
+      </div>
+      <motion.div
+        className="auth-card stack"
+        style={{ gap: 20 }}
+        initial={{ opacity: 0, y: 30, scale: 0.97, filter: "blur(12px)" }}
+        animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+        transition={{ duration: 0.9, ease: EASE }}
+      >
         <div className="center row" style={{ justifyContent: "center" }}>
           <Brand />
         </div>
-        <form className="card pad-lg stack" onSubmit={submit}>
-          <h2 style={{ fontSize: "1.5rem" }}>{mode === "login" ? "Entrar" : "Criar conta grátis"}</h2>
+        <form className="glass strong stack" style={{ padding: 30, borderRadius: 28 }} onSubmit={submit}>
+          <h2 style={{ fontSize: "2.4rem", marginBottom: 4 }}>{mode === "login" ? "Entrar" : "Criar conta grátis"}</h2>
           {mode === "signup" && (
             <label className="field">
               Seu nome
@@ -81,7 +94,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
             )}
           </p>
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 }

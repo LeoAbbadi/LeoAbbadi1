@@ -33,7 +33,7 @@ export function DashboardPage() {
           <span className="muted small">10 ganchos, 5 corpos e 3 CTAs, ou o roteiro inteiro da sua live.</span>
         </Link>
       </div>
-      <div className="grid cols-2">
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
         <div className="card stack">
           <div className="row between">
             <h3 style={{ margin: 0 }}>Seu mês</h3>
