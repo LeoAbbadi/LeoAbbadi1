@@ -1,0 +1,33 @@
+# Sobe tudo no seu computador: banco, site/API e worker.
+#   docker compose up --build
+# Depois abra http://localhost:3000 (rode "docker compose exec api npx tsx src/server/seed.ts" para dados de exemplo)
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: fts
+      POSTGRES_PASSWORD: fts
+      POSTGRES_DB: fts
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["5432:5432"]
+  api:
+    build: { context: ., dockerfile: Dockerfile }
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://fts:fts@db:5432/fts
+      APP_URL: http://localhost:3000
+      NODE_ENV: development
+    volumes: [files:/app/data]
+    ports: ["3000:3000"]
+    depends_on: [db]
+  worker:
+    build: { context: ., dockerfile: Dockerfile.worker }
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://fts:fts@db:5432/fts
+      NODE_ENV: development
+    volumes: [files:/app/data]
+    depends_on: [db]
+volumes:
+  pgdata:
+  files:
