@@ -1,7 +1,7 @@
 // Fila de montagem da demonstração: um vídeo por vez (gravar dois ao mesmo tempo
 // pesaria no celular). Guarda os vídeos já montados para baixar de novo sem refazer.
 import { useSyncExternalStore } from "react";
-import { renderSequence, saveFile, type RenderResult } from "./render.ts";
+import { renderSequence, type RenderResult } from "./render.ts";
 
 export type JobState =
   | { status: "idle" }
@@ -54,9 +54,4 @@ export function render(id: string, urls: string[]): Promise<RenderResult> {
 
 export function fileName(position: number, ext: string): string {
   return `video-${String(position + 1).padStart(3, "0")}.${ext}`;
-}
-
-export async function renderAndSave(id: string, position: number, urls: string[]): Promise<void> {
-  const result = await render(id, urls);
-  await saveFile(fileName(position, result.ext), result.blob);
 }

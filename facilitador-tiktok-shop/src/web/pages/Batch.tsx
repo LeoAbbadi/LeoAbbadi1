@@ -4,79 +4,115 @@ import { api, DEMO, type BatchDetail, type Output } from "../api.ts";
 import { CopyButton, ErrorBox, Loading, PageHead, useLoad } from "../components/ui.tsx";
 import { bytes, date, weekday } from "../format.ts";
 import { LABEL_INFO, type OriginalityLabel } from "../../shared/combos.ts";
-import { fileName, render, renderAndSave, useJob } from "../demo/downloadQueue.ts";
-import { saveFile, unlockAudio } from "../demo/render.ts";
+import { fileName, render, useJob } from "../demo/downloadQueue.ts";
+import { saveFile, unlockAudio, warmUpDownloads } from "../demo/render.ts";
 import { makeZip } from "../demo/zip.ts";
 
 const ZIP_LIMIT = 20;
 
+type SaveMsg = { kind: "ok" | "error"; text: string } | null;
+
+function SaveNote({ msg }: { msg: SaveMsg }) {
+  if (!msg) return null;
+  return (
+    <span className="small" style={{ color: msg.kind === "ok" ? "var(--mint)" : "var(--rose)" }} role="status">
+      {msg.text}
+    </span>
+  );
+}
+
+async function trySave(name: string, blob: Blob, setMsg: (m: SaveMsg) => void) {
+  setMsg(null);
+  try {
+    const r = await saveFile(name, blob);
+    if (r === "saved") setMsg({ kind: "ok", text: "Pronto! Procure em Downloads (ou em Fotos, se escolheu Salvar vídeo)." });
+  } catch (err) {
+    setMsg({ kind: "error", text: (err as Error).message });
+  }
+}
+
 /** Demonstração: monta os vídeos no navegador, um por vez, e entrega um ZIP. */
 function DemoZipButton({ outputs }: { outputs: Output[] }) {
-  const [state, setState] = useState<{ done: number; total: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [zip, setZip] = useState<Blob | null>(null);
+  const [msg, setMsg] = useState<SaveMsg>(null);
   const list = outputs.filter((o) => o.sequence).slice(0, ZIP_LIMIT);
-  async function go() {
+  async function build() {
     unlockAudio();
-    setError(null);
-    setState({ done: 0, total: list.length });
+    setMsg(null);
+    setProgress({ done: 0, total: list.length });
     try {
       const files: { name: string; data: Blob }[] = [];
       for (const [n, o] of list.entries()) {
         const r = await render(o.id, o.sequence!);
         files.push({ name: fileName(o.position, r.ext), data: r.blob });
-        setState({ done: n + 1, total: list.length });
+        setProgress({ done: n + 1, total: list.length });
       }
       const csv = [
         "ordem;data sugerida;selo;arquivo;legenda",
         ...list.map((o, n) => [o.position + 1, date(o.suggestedDate), LABEL_INFO[o.label].title, files[n]!.name, `"${o.caption.replace(/"/g, '""')}"`].join(";")),
       ].join("\n");
       files.push({ name: "ordem-de-postagem.csv", data: new Blob(["\uFEFF" + csv], { type: "text/csv" }) });
-      await saveFile("videos.zip", await makeZip(files));
+      setZip(await makeZip(files));
     } catch (err) {
-      setError((err as Error).message);
+      setMsg({ kind: "error", text: (err as Error).message });
     } finally {
-      setState(null);
+      setProgress(null);
     }
   }
+  const label = outputs.length > ZIP_LIMIT ? `os ${ZIP_LIMIT} primeiros` : "todos";
   return (
     <div className="stack" style={{ gap: 6, alignItems: "flex-end" }}>
-      <button className="btn primary" onClick={go} disabled={!!state}>
-        {state ? `Montando ${state.done}/${state.total}...` : outputs.length > ZIP_LIMIT ? `⬇ Baixar os ${ZIP_LIMIT} primeiros (ZIP)` : "⬇ Baixar todos (ZIP)"}
-      </button>
-      {error && <span className="small" style={{ color: "var(--rose)" }}>{error}</span>}
+      {zip ? (
+        <button className="btn primary" onClick={() => void trySave("videos.zip", zip, setMsg)}>
+          ⬇ Salvar ZIP no aparelho ({list.length} vídeos)
+        </button>
+      ) : (
+        <button className="btn primary" onClick={() => void build()} disabled={!!progress}>
+          {progress ? `Montando ${progress.done}/${progress.total}... deixe a tela aberta` : `⬇ Baixar ${label} (ZIP)`}
+        </button>
+      )}
+      <SaveNote msg={msg} />
     </div>
   );
 }
 
 function DemoDownload({ output: o }: { output: Output }) {
   const job = useJob(o.id);
-  const [error, setError] = useState<string | null>(null);
-  async function go() {
-    unlockAudio();
-    setError(null);
-    try {
-      await renderAndSave(o.id, o.position, o.sequence!);
-    } catch (err) {
-      setError((err as Error).message);
-    }
+  const [msg, setMsg] = useState<SaveMsg>(null);
+  function start() {
+    unlockAudio(); // precisa ser no toque para o vídeo sair com som
+    setMsg(null);
+    render(o.id, o.sequence!).catch(() => undefined);
   }
   if (job.status === "rendering" || job.status === "queued") {
     const pct = job.status === "rendering" ? Math.round(job.progress * 100) : 0;
     return (
       <div className="stack" style={{ gap: 6 }}>
         <div className="progress"><div style={{ width: `${Math.max(3, pct)}%` }} /></div>
-        <span className="small muted">{job.status === "queued" ? "Na fila..." : `Montando o vídeo... ${pct}% · deixe a tela aberta`}</span>
+        <span className="small muted">
+          {job.status === "queued" ? "Na fila..." : pct === 0 ? "Preparando os vídeos..." : `Montando o vídeo... ${pct}% · deixe a tela aberta`}
+        </span>
+      </div>
+    );
+  }
+  if (job.status === "ready") {
+    return (
+      <div className="stack" style={{ gap: 6 }}>
+        <span className="small mint">✓ Vídeo montado</span>
+        <button className="btn primary" style={{ width: "100%" }} onClick={() => void trySave(fileName(o.position, job.result.ext), job.result.blob, setMsg)}>
+          ⬇ Salvar no aparelho
+        </button>
+        <SaveNote msg={msg} />
       </div>
     );
   }
   return (
     <div className="stack" style={{ gap: 6 }}>
-      <button className="btn primary" style={{ width: "100%" }} onClick={go}>
-        ⬇ {job.status === "ready" ? "Baixar de novo" : "Baixar vídeo pronto"}
+      <button className="btn primary" style={{ width: "100%" }} onClick={start}>
+        ⬇ {job.status === "error" ? "Tentar de novo" : "Baixar vídeo pronto"}
       </button>
-      {(error || job.status === "error") && (
-        <span className="small" style={{ color: "var(--rose)" }}>{error ?? (job.status === "error" ? job.message : "")}</span>
-      )}
+      {job.status === "error" && <SaveNote msg={{ kind: "error", text: job.message }} />}
     </div>
   );
 }
@@ -86,6 +122,9 @@ export function BatchPage() {
   const { data, error, loading, reload } = useLoad(() => api<BatchDetail>(`/api/batches/${id}`), [id]);
   const [filter, setFilter] = useState<OriginalityLabel | "all">("all");
   const status = data?.batch.status;
+  useEffect(() => {
+    if (DEMO) warmUpDownloads();
+  }, []);
 
   useEffect(() => {
     if (status !== "queued" && status !== "processing") return;
@@ -149,7 +188,8 @@ export function BatchPage() {
           {DEMO && (
             <div className="alert warn small" style={{ marginBottom: 12 }}>
               Toque em <strong>Baixar vídeo pronto</strong>: o navegador monta o vídeo final (gancho + corpo + CTA, com
-              áudio) e salva no seu aparelho. Leva o tempo do próprio vídeo, então deixe a tela aberta enquanto monta.
+              áudio). Leva o tempo do próprio vídeo, então deixe a tela aberta. Quando terminar, toque em{" "}
+              <strong>Salvar no aparelho</strong>.
             </div>
           )}
           <div className="alert info small" style={{ marginBottom: 16 }}>
@@ -190,7 +230,7 @@ function SequencePlayer({ urls }: { urls: string[] }) {
         ref={ref}
         src={urls[i]}
         playsInline
-        preload="metadata"
+        preload="none"
         onClick={() => (ref.current?.paused ? void ref.current.play() : ref.current?.pause())}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}

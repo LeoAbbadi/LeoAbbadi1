@@ -34,24 +34,72 @@ function pickMime(): { mime: string; ext: "mp4" | "webm" } {
   throw new Error("Este navegador não consegue gravar vídeo. Tente pelo Safari ou Chrome atualizados.");
 }
 
-function loadVideo(url: string): Promise<HTMLVideoElement> {
+// Palco escondido (mas "visível" para o navegador): o iPhone não carrega nem desenha
+// vídeos fora da página ou com display:none.
+function stage(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.setAttribute("aria-hidden", "true");
+  el.style.cssText =
+    "position:fixed;left:0;top:0;width:2px;height:2px;overflow:hidden;opacity:0.01;pointer-events:none;z-index:-1";
+  document.body.appendChild(el);
+  return el;
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const v = document.createElement("video");
-    v.muted = true;
-    v.playsInline = true;
-    v.preload = "auto";
-    v.crossOrigin = "anonymous";
-    v.src = url;
-    const done = () => {
-      v.removeEventListener("canplaythrough", done);
-      resolve(v);
-    };
-    v.addEventListener("canplaythrough", done);
-    v.addEventListener("error", () => reject(new Error("Não foi possível abrir um dos vídeos.")), { once: true });
-    v.load();
-    // Alguns navegadores de celular só disparam canplaythrough depois de tocar
-    setTimeout(() => (v.readyState >= 2 ? done() : undefined), 2500);
+    const t = setTimeout(() => reject(new Error(message)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
   });
+}
+
+function once(el: HTMLMediaElement, event: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ok = () => {
+      el.removeEventListener("error", fail);
+      resolve();
+    };
+    const fail = () => {
+      el.removeEventListener(event, ok);
+      reject(new Error("Não foi possível abrir um dos vídeos enviados."));
+    };
+    el.addEventListener(event, ok, { once: true });
+    el.addEventListener("error", fail, { once: true });
+  });
+}
+
+/** Carrega e "acorda" o vídeo: o iPhone só baixa os quadros depois de um play. */
+async function loadVideo(url: string, holder: HTMLElement): Promise<HTMLVideoElement> {
+  const v = document.createElement("video");
+  v.muted = true;
+  v.defaultMuted = true;
+  v.playsInline = true;
+  v.setAttribute("playsinline", "");
+  v.setAttribute("muted", "");
+  v.preload = "auto";
+  v.width = 2;
+  v.height = 2;
+  holder.appendChild(v);
+  const meta = once(v, "loadedmetadata");
+  v.src = url;
+  v.load();
+  await withTimeout(meta, 20_000, "Um dos vídeos demorou demais para abrir.");
+  await withTimeout(v.play(), 10_000, "O navegador não deixou tocar um dos vídeos.");
+  v.pause();
+  if (v.currentTime > 0) {
+    const seeked = once(v, "seeked");
+    v.currentTime = 0;
+    await withTimeout(seeked, 5_000, "Não foi possível voltar o vídeo ao início.").catch(() => undefined);
+  }
+  return v;
 }
 
 async function decodeAudio(ctx: AudioContext, url: string): Promise<AudioBuffer | null> {
@@ -95,6 +143,14 @@ export function unlockAudio(): AudioContext {
   const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   sharedAudio ??= new AudioCtx();
   void sharedAudio.resume();
+  try {
+    const silence = sharedAudio.createBufferSource();
+    silence.buffer = sharedAudio.createBuffer(1, 1, 22050);
+    silence.connect(sharedAudio.destination);
+    silence.start(0);
+  } catch {
+    /* sem problema */
+  }
   return sharedAudio;
 }
 
@@ -105,34 +161,47 @@ export function renderSequence(urls: string[], onProgress: (p: number) => void):
 
 async function run(urls: string[], audio: AudioContext, onProgress: (p: number) => void): Promise<RenderResult> {
   const { mime, ext } = pickMime();
-  const [videos, buffers] = await Promise.all([Promise.all(urls.map(loadVideo)), Promise.all(urls.map((u) => decodeAudio(audio, u)))]);
-  const durations = videos.map((v, i) => (Number.isFinite(v.duration) && v.duration > 0 ? v.duration : (buffers[i]?.duration ?? 0)));
-  const total = durations.reduce((a, b) => a + b, 0) || 1;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
-  const g = canvas.getContext("2d")!;
-  drawFrame(g, videos[0]!);
-
-  const dest = audio.createMediaStreamDestination();
-  const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
-  const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8_000_000, audioBitsPerSecond: 128_000 });
-  const chunks: Blob[] = [];
-  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  const stopped = new Promise<void>((resolve) => (recorder.onstop = () => resolve()));
-
-  let current = videos[0]!;
+  const holder = stage();
+  const videos: HTMLVideoElement[] = [];
   let raf = 0;
-  const loop = () => {
-    drawFrame(g, current);
-    raf = requestAnimationFrame(loop);
-  };
-  raf = requestAnimationFrame(loop);
-  recorder.start(1000);
-
-  let elapsedBefore = 0;
+  let recorder: MediaRecorder | null = null;
+  let stream: MediaStream | null = null;
   try {
+    for (const u of urls) videos.push(await loadVideo(u, holder));
+    // um de cada vez para não estourar a memória do celular com vídeos grandes
+    const buffers: (AudioBuffer | null)[] = [];
+    for (const u of urls) buffers.push(await decodeAudio(audio, u));
+    const durations = videos.map((v, i) => (Number.isFinite(v.duration) && v.duration > 0 ? v.duration : (buffers[i]?.duration ?? 0)));
+    const total = durations.reduce((a, b) => a + b, 0) || 1;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = WIDTH;
+    canvas.height = HEIGHT;
+    canvas.style.cssText = "width:2px;height:2px";
+    holder.appendChild(canvas);
+    const g = canvas.getContext("2d")!;
+    drawFrame(g, videos[0]!);
+
+    if (audio.state !== "running") await audio.resume().catch(() => undefined);
+    const dest = audio.createMediaStreamDestination();
+    stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8_000_000, audioBitsPerSecond: 128_000 });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
+    };
+    const rec = recorder;
+    const stopped = new Promise<void>((resolve) => (rec.onstop = () => resolve()));
+
+    let current = videos[0]!;
+    const loop = () => {
+      drawFrame(g, current);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    recorder.start(1000);
+
+    let elapsedBefore = 0;
     for (let i = 0; i < videos.length; i++) {
       const v = videos[i]!;
       current = v;
@@ -144,28 +213,57 @@ async function run(urls: string[], audio: AudioContext, onProgress: (p: number) 
         source.buffer = buffer;
         source.connect(dest);
       }
-      const ended = new Promise<void>((resolve) => {
-        v.onended = () => resolve();
-        // garante o fim mesmo se o evento não vier
-        setTimeout(resolve, (durations[i]! + 1.5) * 1000);
-      });
-      await v.play();
+      await withTimeout(v.play(), 10_000, "O navegador parou de tocar o vídeo. Deixe a tela ligada e tente de novo.");
       source?.start();
-      const tick = setInterval(() => onProgress(Math.min(0.99, (elapsedBefore + v.currentTime) / total)), 250);
-      await ended;
-      clearInterval(tick);
+      // termina no fim do vídeo; se o vídeo travar por 12 s, avisa em vez de ficar parado
+      await new Promise<void>((resolve, reject) => {
+        let last = -1;
+        let still = 0;
+        const tick = setInterval(() => {
+          onProgress(Math.min(0.99, (elapsedBefore + v.currentTime) / total));
+          if (v.ended || v.currentTime >= durations[i]! - 0.05) {
+            clearInterval(tick);
+            resolve();
+            return;
+          }
+          if (v.currentTime === last) {
+            still += 250;
+            if (still >= 12_000) {
+              clearInterval(tick);
+              reject(new Error("A montagem parou. Deixe a tela ligada, com esta página aberta, e tente de novo."));
+            }
+          } else {
+            still = 0;
+            last = v.currentTime;
+          }
+        }, 250);
+        v.onended = () => {
+          clearInterval(tick);
+          resolve();
+        };
+      });
       source?.stop();
+      v.pause();
       elapsedBefore += durations[i]!;
     }
+    cancelAnimationFrame(raf);
+    recorder.stop();
+    await stopped;
+    const blob = new Blob(chunks, { type: mime.split(";")[0] });
+    if (!blob.size) throw new Error("O navegador não conseguiu gravar o vídeo final.");
+    onProgress(1);
+    return { blob, ext };
   } finally {
     cancelAnimationFrame(raf);
-    if (recorder.state !== "inactive") recorder.stop();
-    videos.forEach((v) => v.pause());
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    stream?.getTracks().forEach((t) => t.stop());
+    videos.forEach((v) => {
+      v.pause();
+      v.removeAttribute("src");
+      v.load();
+    });
+    holder.remove();
   }
-  await stopped;
-  stream.getTracks().forEach((t) => t.stop());
-  onProgress(1);
-  return { blob: new Blob(chunks, { type: mime.split(";")[0] }), ext };
 }
 
 // ---------- entregar o arquivo ----------
@@ -182,18 +280,29 @@ function getDownloads(): Promise<Downloads | null> {
   return downloadsPromise;
 }
 
-/** Salva o arquivo: pela prévia do Claude (pede confirmação) ou como download comum. */
+export class SaveError extends Error {}
+
+/**
+ * Salva o arquivo. Dentro da prévia do Claude usa o recurso de downloads (o
+ * aparelho pede confirmação); fora dela, faz um download comum.
+ * Chame a partir de um toque do usuário.
+ */
 export async function saveFile(filename: string, data: Blob): Promise<"saved" | "declined"> {
-  const downloads = await getDownloads();
-  if (downloads) {
+  const inViewer = !!(window as unknown as { claude?: { use?: unknown } }).claude?.use;
+  if (inViewer) {
+    const downloads = await getDownloads();
+    if (!downloads) {
+      throw new SaveError("Esta página não conseguiu liberar o download neste aparelho. Tente abrir o link pelo app do Claude.");
+    }
     try {
       await downloads.save({ filename, data });
       return "saved";
     } catch (err) {
-      const code = (err as { code?: string }).code;
+      const code = (err as { code?: string }).code ?? "erro";
       if (code === "declined") return "declined";
-      if (code === "rate_limited") throw new Error("Já tem um download esperando confirmação.");
-      if (code !== "unavailable" && code !== "not_granted") throw new Error("Não foi possível salvar o arquivo.");
+      if (code === "rate_limited") throw new SaveError("Já tem um download esperando sua confirmação na tela.");
+      if (code === "too_large") throw new SaveError("O arquivo ficou grande demais para salvar por aqui. Baixe menos vídeos de uma vez.");
+      throw new SaveError(`Não foi possível salvar o arquivo (${code}).`);
     }
   }
   const url = URL.createObjectURL(data);
@@ -205,4 +314,9 @@ export async function saveFile(filename: string, data: Blob): Promise<"saved" | 
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return "saved";
+}
+
+/** Pede o recurso de downloads logo ao abrir a página, para o salvar responder rápido. */
+export function warmUpDownloads(): void {
+  void getDownloads();
 }
