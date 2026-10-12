@@ -4,6 +4,82 @@ import { api, DEMO, type BatchDetail, type Output } from "../api.ts";
 import { CopyButton, ErrorBox, Loading, PageHead, useLoad } from "../components/ui.tsx";
 import { bytes, date, weekday } from "../format.ts";
 import { LABEL_INFO, type OriginalityLabel } from "../../shared/combos.ts";
+import { fileName, render, renderAndSave, useJob } from "../demo/downloadQueue.ts";
+import { saveFile, unlockAudio } from "../demo/render.ts";
+import { makeZip } from "../demo/zip.ts";
+
+const ZIP_LIMIT = 20;
+
+/** Demonstração: monta os vídeos no navegador, um por vez, e entrega um ZIP. */
+function DemoZipButton({ outputs }: { outputs: Output[] }) {
+  const [state, setState] = useState<{ done: number; total: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const list = outputs.filter((o) => o.sequence).slice(0, ZIP_LIMIT);
+  async function go() {
+    unlockAudio();
+    setError(null);
+    setState({ done: 0, total: list.length });
+    try {
+      const files: { name: string; data: Blob }[] = [];
+      for (const [n, o] of list.entries()) {
+        const r = await render(o.id, o.sequence!);
+        files.push({ name: fileName(o.position, r.ext), data: r.blob });
+        setState({ done: n + 1, total: list.length });
+      }
+      const csv = [
+        "ordem;data sugerida;selo;arquivo;legenda",
+        ...list.map((o, n) => [o.position + 1, date(o.suggestedDate), LABEL_INFO[o.label].title, files[n]!.name, `"${o.caption.replace(/"/g, '""')}"`].join(";")),
+      ].join("\n");
+      files.push({ name: "ordem-de-postagem.csv", data: new Blob(["\uFEFF" + csv], { type: "text/csv" }) });
+      await saveFile("videos.zip", await makeZip(files));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setState(null);
+    }
+  }
+  return (
+    <div className="stack" style={{ gap: 6, alignItems: "flex-end" }}>
+      <button className="btn primary" onClick={go} disabled={!!state}>
+        {state ? `Montando ${state.done}/${state.total}...` : outputs.length > ZIP_LIMIT ? `⬇ Baixar os ${ZIP_LIMIT} primeiros (ZIP)` : "⬇ Baixar todos (ZIP)"}
+      </button>
+      {error && <span className="small" style={{ color: "var(--rose)" }}>{error}</span>}
+    </div>
+  );
+}
+
+function DemoDownload({ output: o }: { output: Output }) {
+  const job = useJob(o.id);
+  const [error, setError] = useState<string | null>(null);
+  async function go() {
+    unlockAudio();
+    setError(null);
+    try {
+      await renderAndSave(o.id, o.position, o.sequence!);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+  if (job.status === "rendering" || job.status === "queued") {
+    const pct = job.status === "rendering" ? Math.round(job.progress * 100) : 0;
+    return (
+      <div className="stack" style={{ gap: 6 }}>
+        <div className="progress"><div style={{ width: `${Math.max(3, pct)}%` }} /></div>
+        <span className="small muted">{job.status === "queued" ? "Na fila..." : `Montando o vídeo... ${pct}% · deixe a tela aberta`}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <button className="btn primary" style={{ width: "100%" }} onClick={go}>
+        ⬇ {job.status === "ready" ? "Baixar de novo" : "Baixar vídeo pronto"}
+      </button>
+      {(error || job.status === "error") && (
+        <span className="small" style={{ color: "var(--rose)" }}>{error ?? (job.status === "error" ? job.message : "")}</span>
+      )}
+    </div>
+  );
+}
 
 export function BatchPage() {
   const { id = "" } = useParams();
@@ -34,11 +110,13 @@ export function BatchPage() {
           </>
         }
         actions={
-          batch.zipUrl && (
+          batch.zipUrl ? (
             <a className="btn primary" href={batch.zipUrl}>
-              Baixar tudo (ZIP{batch.zipSizeBytes ? `, ${bytes(batch.zipSizeBytes)}` : ""})
+              ⬇ Baixar todos (ZIP{batch.zipSizeBytes ? `, ${bytes(batch.zipSizeBytes)}` : ""})
             </a>
-          )
+          ) : DEMO && status === "done" ? (
+            <DemoZipButton outputs={outputs} />
+          ) : null
         }
       />
 
@@ -70,13 +148,13 @@ export function BatchPage() {
         <>
           {DEMO && (
             <div className="alert warn small" style={{ marginBottom: 12 }}>
-              Demonstração: cada vídeo toca os pedaços em sequência no navegador. No site publicado ele sai montado num
-              arquivo só, com botão de baixar e o ZIP com todos.
+              Toque em <strong>Baixar vídeo pronto</strong>: o navegador monta o vídeo final (gancho + corpo + CTA, com
+              áudio) e salva no seu aparelho. Leva o tempo do próprio vídeo, então deixe a tela aberta enquanto monta.
             </div>
           )}
           <div className="alert info small" style={{ marginBottom: 16 }}>
             Poste na ordem. O ZIP traz a planilha <strong>ordem-de-postagem.csv</strong> com data, selo e legenda de cada
-            vídeo. Disponível até {batch.expiresAt ? date(batch.expiresAt) : "—"}.
+            vídeo.{DEMO ? "" : ` Disponível até ${batch.expiresAt ? date(batch.expiresAt) : "—"}.`}
           </div>
           <div className="row" style={{ marginBottom: 16 }}>
             {(["all", "original", "variacao", "parecido"] as const).map((f) => (
@@ -167,14 +245,13 @@ function VideoCard({ output: o }: { output: Output }) {
         }}
         placeholder="Legenda do post"
       />
-      <div className="row">
-        <CopyButton text={caption} label="Copiar legenda" />
-        {o.downloadUrl && (
-          <a className="btn sm" href={o.downloadUrl}>
-            Baixar
-          </a>
-        )}
-      </div>
+      {o.downloadUrl && (
+        <a className="btn primary" style={{ width: "100%" }} href={o.downloadUrl}>
+          ⬇ Baixar vídeo pronto
+        </a>
+      )}
+      {!o.downloadUrl && o.sequence && <DemoDownload output={o} />}
+      <CopyButton text={caption} label="Copiar legenda" />
     </div>
   );
 }
