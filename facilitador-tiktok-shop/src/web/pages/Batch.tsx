@@ -5,7 +5,7 @@ import { CopyButton, ErrorBox, Loading, PageHead, useLoad } from "../components/
 import { bytes, date, weekday } from "../format.ts";
 import { LABEL_INFO, type OriginalityLabel } from "../../shared/combos.ts";
 import { fileName, render, useJob } from "../demo/downloadQueue.ts";
-import { saveFile, unlockAudio, warmUpDownloads } from "../demo/render.ts";
+import { prepareForRender, saveFile, warmUpDownloads } from "../demo/render.ts";
 import { makeZip } from "../demo/zip.ts";
 
 const ZIP_LIMIT = 20;
@@ -38,7 +38,7 @@ function DemoZipButton({ outputs }: { outputs: Output[] }) {
   const [msg, setMsg] = useState<SaveMsg>(null);
   const list = outputs.filter((o) => o.sequence).slice(0, ZIP_LIMIT);
   async function build() {
-    unlockAudio();
+    prepareForRender();
     setMsg(null);
     setProgress({ done: 0, total: list.length });
     try {
@@ -81,7 +81,7 @@ function DemoDownload({ output: o }: { output: Output }) {
   const job = useJob(o.id);
   const [msg, setMsg] = useState<SaveMsg>(null);
   function start() {
-    unlockAudio(); // precisa ser no toque para o vídeo sair com som
+    prepareForRender(); // precisa ser no toque para o vídeo sair com som (iPhone)
     setMsg(null);
     render(o.id, o.sequence!).catch(() => undefined);
   }
@@ -91,7 +91,13 @@ function DemoDownload({ output: o }: { output: Output }) {
       <div className="stack" style={{ gap: 6 }}>
         <div className="progress"><div style={{ width: `${Math.max(3, pct)}%` }} /></div>
         <span className="small muted">
-          {job.status === "queued" ? "Na fila..." : pct === 0 ? "Preparando os vídeos..." : `Montando o vídeo... ${pct}% · deixe a tela aberta`}
+          {job.status === "queued"
+            ? "Na fila..."
+            : job.phase === "preparing"
+              ? "Preparando os vídeos..."
+              : job.phase === "finishing"
+                ? "Finalizando o arquivo... só mais uns segundos"
+                : `Montando o vídeo... ${pct}% · deixe a tela aberta`}
         </span>
       </div>
     );

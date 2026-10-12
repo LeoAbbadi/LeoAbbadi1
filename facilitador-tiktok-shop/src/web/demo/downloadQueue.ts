@@ -1,12 +1,12 @@
 // Fila de montagem da demonstração: um vídeo por vez (gravar dois ao mesmo tempo
 // pesaria no celular). Guarda os vídeos já montados para baixar de novo sem refazer.
 import { useSyncExternalStore } from "react";
-import { renderSequence, type RenderResult } from "./render.ts";
+import { renderSequence, type RenderPhase, type RenderResult } from "./render.ts";
 
 export type JobState =
   | { status: "idle" }
   | { status: "queued" }
-  | { status: "rendering"; progress: number }
+  | { status: "rendering"; progress: number; phase: RenderPhase }
   | { status: "ready"; result: RenderResult }
   | { status: "error"; message: string };
 
@@ -38,9 +38,9 @@ export function render(id: string, urls: string[]): Promise<RenderResult> {
   if (cur?.status === "ready") return Promise.resolve(cur.result);
   set(id, { status: "queued" });
   const job = chain.then(async () => {
-    set(id, { status: "rendering", progress: 0 });
+    set(id, { status: "rendering", progress: 0, phase: "preparing" });
     try {
-      const result = await renderSequence(urls, (progress) => set(id, { status: "rendering", progress }));
+      const result = await renderSequence(urls, (progress, phase) => set(id, { status: "rendering", progress, phase }));
       set(id, { status: "ready", result });
       return result;
     } catch (err) {
