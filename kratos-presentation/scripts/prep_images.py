@@ -40,6 +40,30 @@ def save_webp(im, name, q=82):
 def load(*parts):
     return Image.open(p(*parts))
 
+def erase_text(im, *boxes, strict=False):
+    """Paint out the light caption text (actor credits) inside each box=(x0, y0, x1, y1).
+    strict=True only takes near-white, locally bright strokes (for busy areas such as a beard)."""
+    import numpy as np, cv2
+    a = cv2.cvtColor(np.array(im.convert('RGB')), cv2.COLOR_RGB2BGR)
+    mask = np.zeros(a.shape[:2], 'uint8')
+    for box in boxes:
+        x0, y0, x1, y1 = box[:4]
+        gmin, hmin, nmax = (list(box[4:]) + [175, 18, 28][len(box) - 4:])[:3] if len(box) > 4 else (175, 18, 28)
+        roi = a[y0:y1, x0:x1].astype(int)
+        gray = cv2.cvtColor(a[y0:y1, x0:x1], cv2.COLOR_BGR2GRAY)
+        if strict:
+            hat = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7)))
+            neutral = (roi.max(axis=2) - roi.min(axis=2)) < nmax
+            m = ((gray > gmin) & neutral & (hat > hmin)).astype('uint8') * 255
+            m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+        else:
+            hat = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11)))
+            m = ((hat > 22) | (gray > 205)).astype('uint8') * 255
+            m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
+        mask[y0:y1, x0:x1] |= m
+    out = cv2.inpaint(a, mask, 3 if strict else 6, cv2.INPAINT_TELEA)
+    return Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB))
+
 def up(name):
     return Image.open(os.path.join(UPL, name)).convert('RGB')
 
@@ -69,7 +93,7 @@ bgs = {
     'freya_fight.jpg': (load(*C, 'bg-hero-1920.jpg'), 0.5, 0.5),
     'hug.jpg': (load(*G, 'final.jpg'), 0.5, 0.45),
     'allies.jpg': (load(*G, 'aliados.jpg'), 0.5, 0.5),
-    'ascension.jpg': (up('ascension.jpg'), 0.5, 0.5),
+    'ascension.jpg': (up('ascension.jpg').crop((0, 0, 1864, 1048)), 0.5, 0.5),
     'gow1_art.jpg': (up('gow1_art.png'), 0.5, 0.5),
     'gow3_close.jpg': (up('gow3_close.png'), 0.5, 0.5),
 }
@@ -101,10 +125,10 @@ cards = {
     'hermes.jpg': (load(*S, 'PJ', 'hermes.jpg'), 0.6, 0.3),
     'hercules.jpg': (load(*S, 'PJ', 'hercules.jpg'), 0.5, 0.4),
     'zeus.jpg': (load(*S, 'PJ', 'zeus.webp'), 0.5, 0.35),
-    'atreus.jpg': (load(*C, 'atreus.jpg'), 0.5, 0.5),
-    'freya.jpg': (load(*C, 'freya.jpg'), 0.5, 0.5),
-    'mimir_p.jpg': (load(*C, 'mimir.jpg'), 0.5, 0.5),
-    'thor.jpg': (load(*C, 'thor.jpg'), 0.5, 0.5),
+    'atreus.jpg': (erase_text(load(*C, 'atreus.jpg'), (88, 262, 302, 328)), 0.5, 0.5),
+    'freya.jpg': (erase_text(load(*C, 'freya.jpg'), (160, 300, 330, 321, 120, 10), (122, 323, 358, 332, 110, 8), (178, 336, 314, 369), strict=True), 0.5, 0.5),
+    'mimir_p.jpg': (erase_text(load(*C, 'mimir.jpg'), (150, 298, 345, 323, 140, 9, 70), (118, 322, 368, 333, 125, 7, 70), (262, 322, 314, 333, 95, 3, 120), (178, 336, 314, 369), strict=True), 0.5, 0.5),
+    'thor.jpg': (erase_text(load(*C, 'thor.jpg'), (92, 262, 308, 328)), 0.5, 0.5),
     'odin.jpg': (load(*S, 'PJ', 'odin.webp'), 0.5, 0.4),
     'baldur.jpg': (load(*S, 'PJ', 'baldur.webp'), 0.42, 0.4),
 }

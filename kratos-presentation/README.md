@@ -53,6 +53,6 @@ node scripts/shots.js dist/Kratos_Presentation_Interactive.html <pasta-de-saida>
 O código-fonte da apresentação está em `src/index.html`.
 
 ## Créditos
-- **Jogos:** série God of War, de Santa Monica Studio / Sony Interactive Entertainment. Todas as imagens dos jogos pertencem aos donos e são usadas só neste trabalho escolar.
-- **Origem das imagens:** artes e capturas oficiais tiradas de sites de fãs públicos no GitHub (`Samuel0422/Kratos`, `Gabiel001/god_of_war_3`, `CarlosAugustoPrado/God-of-War-Ragnarok`, `Eric081a/GodOfWar`), mais as imagens enviadas pelo autor (captura do menu, Kratos em God of War III, arte de Ascension, a Serpente do Mundo, arte e capa de God of War 2005). Na cutscene, o Kratos nórdico vem da captura do menu e o Odin vem da cena da visita de Odin e Thor, porque não deu para baixar a imagem exata dessa cena.
+- **Imagens:** cenas e artes dos jogos God of War, usadas só neste trabalho escolar.
+- **Origem das imagens:** artes e capturas tiradas de sites de fãs públicos no GitHub (`Samuel0422/Kratos`, `Gabiel001/god_of_war_3`, `CarlosAugustoPrado/God-of-War-Ragnarok`, `Eric081a/GodOfWar`), mais as imagens enviadas pelo autor (captura do menu, Kratos em God of War III, arte de Ascension, a Serpente do Mundo, arte e capa de God of War 2005). Os nomes dos atores foram apagados dos retratos dos personagens. Na cutscene, o Kratos nórdico vem da captura do menu e o Odin vem da cena da visita de Odin e Thor, porque não deu para baixar a imagem exata dessa cena.
 - **Fontes:** Cinzel, EB Garamond, Barlow Condensed e Noto Sans Runic (Google Fonts, SIL Open Font License).

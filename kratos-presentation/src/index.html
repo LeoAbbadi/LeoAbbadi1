@@ -363,14 +363,14 @@ html.nogrammar .vp{font-weight:inherit;color:inherit;text-decoration:none}
 @keyframes barT{from{transform:translateY(-100%)}}
 @keyframes barB{from{transform:translateY(100%)}}
 .cutscene{background:#000}
-.side{position:absolute;top:118px;bottom:150px;width:960px;background:var(--bg) center top/cover no-repeat;overflow:hidden}
-.side.k{left:0;background-position:50% 0}
-.side.o{right:0}
-.side::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0) 45%)}
-.side.k::after{background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0) 45%),linear-gradient(90deg,rgba(0,0,0,.25),rgba(0,0,0,0) 30%,rgba(0,0,0,0) 80%,rgba(0,0,0,.55))}
-.side.o::after{background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0) 45%),linear-gradient(270deg,rgba(0,0,0,.2),rgba(0,0,0,0) 30%,rgba(0,0,0,0) 80%,rgba(0,0,0,.55))}
-.slide.active .side.k{animation:pushL 18s ease-out both}
-.slide.active .side.o{animation:pushR 18s ease-out both}
+.cutscene .side{position:absolute;top:118px;bottom:150px;width:960px;background:var(--bg) center top/cover no-repeat;overflow:hidden}
+.cutscene .side.k{left:0;background-position:50% 0}
+.cutscene .side.o{right:0}
+.cutscene .side::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0) 45%)}
+.cutscene .side.k::after{background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0) 45%),linear-gradient(90deg,rgba(0,0,0,.25),rgba(0,0,0,0) 30%,rgba(0,0,0,0) 80%,rgba(0,0,0,.55))}
+.cutscene .side.o::after{background:linear-gradient(0deg,rgba(0,0,0,.6),rgba(0,0,0,0) 45%),linear-gradient(270deg,rgba(0,0,0,.2),rgba(0,0,0,0) 30%,rgba(0,0,0,0) 80%,rgba(0,0,0,.55))}
+.slide.active.cutscene .side.k{animation:pushL 18s ease-out both}
+.slide.active.cutscene .side.o{animation:pushR 18s ease-out both}
 @keyframes pushL{from{background-size:112%;background-position:30% 0}to{background-size:100%;background-position:50% 0}}
 @keyframes pushR{from{background-size:112%;background-position:70% 0}to{background-size:100%;background-position:50% 50%}}
 .seam{position:absolute;left:958px;top:118px;bottom:150px;width:4px;z-index:6;background:linear-gradient(180deg,rgba(0,0,0,0),var(--ember) 30%,var(--frost) 70%,rgba(0,0,0,0))}
@@ -656,7 +656,7 @@ html.print .logo{filter:none;background:none;-webkit-text-fill-color:#ece7de;col
       </div>
     </div>
     <div class="col-r">
-      <div class="frame big a" style="--d:3;--bg:var(--i-baldur-fight)"><div class="chip">Fun fact · the whole game is one single camera shot — no cuts!</div><div class="cap">Kratos vs Baldur</div></div>
+      <div class="frame big a" style="--d:3;--bg:var(--i-baldur-fight)"><div class="cap">Kratos vs Baldur</div></div>
       <div class="row2 three">
         <div class="frame a" style="--d:4;--bg:var(--i-mimir)"><div class="cap">Meeting Mimir</div></div>
         <div class="frame a" style="--d:5;--bg:var(--i-serpent)"><div class="cap">The World Serpent</div></div>
@@ -748,7 +748,7 @@ html.print .logo{filter:none;background:none;-webkit-text-fill-color:#ece7de;col
       <div class="item a" style="--d:2;--c:var(--ember)"><div class="pic" style="--bg:var(--i-blades)"></div><div class="body"><div class="rar">Legendary · Fire</div><h3>Blades of Chaos</h3><div class="era">Greek &amp; Norse saga</div><p>Two blades on burning chains, given to Kratos by Ares. They remind him of his worst mistakes.</p><div class="stat"><div class="nm">Damage</div><div class="bar"><i style="--v:92%"></i></div></div><div class="stat"><div class="nm">Range</div><div class="bar"><i style="--v:85%"></i></div></div></div></div>
       <div class="item a" style="--d:3;--c:var(--gold2)"><div class="pic" style="--bg:var(--i-olympus-blade)"></div><div class="body"><div class="rar">Divine · Lightning</div><h3>Blade of Olympus</h3><div class="era">God of War II &amp; III</div><p>Created by Zeus to end the Great War. In the end, Kratos used it against Zeus himself.</p><div class="stat"><div class="nm">Damage</div><div class="bar"><i style="--v:98%"></i></div></div><div class="stat"><div class="nm">Range</div><div class="bar"><i style="--v:45%"></i></div></div></div></div>
       <div class="item a" style="--d:4;--c:var(--frost)"><div class="pic" style="--bg:var(--i-axe)"></div><div class="body"><div class="rar">Legendary · Frost</div><h3>Leviathan Axe</h3><div class="era">Norse saga</div><p>Made by the dwarves Brok and Sindri for Faye. When Kratos throws it, it flies back to his hand.</p><div class="stat"><div class="nm">Damage</div><div class="bar"><i style="--v:88%"></i></div></div><div class="stat"><div class="nm">Range</div><div class="bar"><i style="--v:75%"></i></div></div></div></div>
-      <div class="item a" style="--d:5;--c:#d9b45c"><div class="pic" style="--bg:var(--i-shield)"></div><div class="body"><div class="rar">Epic · Defence</div><h3>The Shield</h3><div class="era">Norse saga</div><p>Kratos uses shields to block and parry. In Ragnarök, he can choose different shields.</p><div class="stat"><div class="nm">Defence</div><div class="bar"><i style="--v:95%"></i></div></div><div class="stat"><div class="nm">Damage</div><div class="bar"><i style="--v:35%"></i></div></div></div></div>
+      <div class="item a" style="--d:5;--c:#d9b45c"><div class="pic" style="--bg:var(--i-shield)"></div><div class="body"><div class="rar">Epic · Defence</div><h3>The Shield</h3><div class="era">Norse saga</div><p>A shield that opens on his arm. Kratos uses it to block attacks and to protect his son.</p><div class="stat"><div class="nm">Defence</div><div class="bar"><i style="--v:95%"></i></div></div><div class="stat"><div class="nm">Damage</div><div class="bar"><i style="--v:35%"></i></div></div></div></div>
     </div>
   </div>
 </section>
@@ -821,9 +821,7 @@ html.print .logo{filter:none;background:none;-webkit-text-fill-color:#ece7de;col
       </nav>
     </div>
     <div class="credits a" style="--d:4">
-      <div><b>Games</b> God of War series — Santa Monica Studio / Sony Interactive Entertainment.</div>
-      <div><b>Images</b> Official game art and screenshots, used for an educational school project only.</div>
-      <div><b>Fonts</b> Cinzel, EB Garamond, Barlow Condensed, Noto Sans Runic (SIL Open Font License).</div>
+      <div><b>Images</b> Scenes and art from the God of War games, used only for this school project.</div>
     </div>
   </div>
 </section>
