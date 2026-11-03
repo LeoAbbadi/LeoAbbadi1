@@ -2,6 +2,8 @@
 
 Apresentação em inglês sobre a história do Kratos, do primeiro God of War (2005) até Ragnarök e o epílogo Valhalla, com a cara do menu do jogo.
 
+**Abrir online (versão animada):** https://claude.ai/artifact/YJuWKNEKcridwFDY5DkzdL
+
 ## Arquivos para usar (pasta `dist/`)
 
 | Arquivo | Quando usar |
@@ -38,8 +40,8 @@ O texto usa de propósito os padrões verbais do *English File, Appendix p.164* 
 #    <pasta-de-envios> tem as imagens enviadas pelo autor: menu.jpg, gow3_close.png,
 #    ascension.jpg, serpent.jpg, gow1_art.png e gow1_cover.jpg
 python3 -I scripts/prep_images.py <pasta-com-os-repos-de-origem> <pasta-de-envios> assets/img
-# 2. juntar fontes e imagens num HTML único
-python3 -I scripts/build.py
+# 2. juntar fontes e imagens num HTML único (--artifact gera também a cópia publicada no link)
+python3 -I scripts/build.py --artifact /tmp/kratos-saga.html
 # 3. gerar os PDFs (precisa do Playwright + Chromium)
 node scripts/make_pdf.js dist/Kratos_Presentation_Interactive.html /tmp/raw.pdf
 node scripts/make_pdf.js dist/Kratos_Presentation_Interactive.html /tmp/raw_clean.pdf clean

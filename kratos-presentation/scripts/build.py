@@ -1,9 +1,12 @@
 """Inline fonts and images into one self-contained HTML file.
 
-usage: python3 -I scripts/build.py   (run from the kratos-presentation folder)
+usage: python3 -I scripts/build.py [--artifact <out.html>]
 output: dist/Kratos_Presentation_Interactive.html
+--artifact also writes a copy for claude.ai Artifacts, which add their own
+<html>/<head>/<body> skeleton (so those tags and the metas are left out).
 """
 import base64
+import sys
 import os
 import re
 
@@ -38,6 +41,14 @@ def img(m):
 
 html = re.sub(r'url\(\.\./assets/img/([\w.-]+)\)', img, html)
 assert '../assets/' not in html, 'an asset reference was not inlined'
+
+if '--artifact' in sys.argv:
+    art = sys.argv[sys.argv.index('--artifact') + 1]
+    a = re.sub(r'<!doctype html>\s*|</?html[^>]*>\s*|</?head>\s*|</?body>\s*|<meta [^>]*>\s*', '', html, flags=re.I)
+    os.makedirs(os.path.dirname(os.path.abspath(art)), exist_ok=True)
+    with open(art, 'w', encoding='utf-8') as f:
+        f.write(a)
+    print(f'{art}: {os.path.getsize(art) / 1e6:.1f} MB (artifact copy)')
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 with open(OUT, 'w', encoding='utf-8') as f:

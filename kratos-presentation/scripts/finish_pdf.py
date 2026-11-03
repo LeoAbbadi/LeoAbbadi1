@@ -57,7 +57,7 @@ for i, (sid, title) in enumerate(SLIDES):
     writer.add_outline_item(title, i)
 
 writer.add_metadata({
-    '/Title': 'Kratos: From Sparta to Ragnarök',
+    '/Title': 'The Saga of Kratos',
     '/Subject': 'English presentation: the story of Kratos, from God of War (2005) to Ragnarök',
     '/Keywords': 'Kratos, God of War, English, presentation, verb patterns',
 })

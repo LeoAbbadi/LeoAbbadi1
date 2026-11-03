@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Kratos: From Sparta to Ragnarök</title>
+<title>The Saga of Kratos</title>
 <!--FONTS--><link rel="stylesheet" href="../assets/fonts/fonts.css"><!--/FONTS-->
 <style id="images">
 /*IMAGES*/
@@ -72,6 +72,7 @@
   --meander:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Cpath d='M0 36H40M36 36V4H8V28H28V12H16V20H22' fill='none' stroke='%23c8a35a' stroke-opacity='.45' stroke-width='2.5'/%3E%3C/svg%3E");
 }
 *{box-sizing:border-box}
+:root{color-scheme:dark}
 html,body{margin:0;height:100%;background:#000;color:var(--text);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%}
 a{color:inherit}
 #stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%) scale(var(--s,.5));transform-origin:50% 50%;overflow:hidden;background:#000}
@@ -424,6 +425,16 @@ html.print .boss .im::after{content:'';position:absolute;inset:0;background:rgba
 html.print .logo-svg .metal{fill:#ece7de;stroke:none}
 html.print .logo{filter:none;background:none;-webkit-text-fill-color:#ece7de;color:#ece7de;text-shadow:0 3px 0 rgba(0,0,0,.8)!important}
 .spark{position:absolute;border-radius:50%;pointer-events:none;z-index:6}
+a:focus-visible,button:focus-visible{outline:2px solid var(--gold2);outline-offset:3px}
+
+/* reduced motion: everything visible at once, no particles or typing */
+@media (prefers-reduced-motion:reduce){
+  .slide,.slide.active{transition:none}
+  .slide *,.slide *::before,.slide *::after{animation:none!important;transition:none!important}
+  .slide .a{opacity:1;transform:none}
+  .slide .stamp{opacity:1}
+  #fx,#flash{display:none}
+}
 </style>
 </head>
 <body>
@@ -837,6 +848,7 @@ html.print .logo{filter:none;background:none;-webkit-text-fill-color:#ece7de;col
   const root = document.documentElement;
   const params = new URLSearchParams(location.search);
   const PRINT = params.has('print');
+  const REDUCED = !PRINT && matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (PRINT) root.classList.add('print');
   if (params.has('clean')) root.classList.add('nogrammar');
 
@@ -978,7 +990,7 @@ html.print .logo{filter:none;background:none;-webkit-text-fill-color:#ece7de;col
     ctx.globalAlpha = 1;
     requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  if (!REDUCED) requestAnimationFrame(frame);
 
   /* ---- navigation ---- */
   let cur = -1;
@@ -995,7 +1007,7 @@ html.print .logo{filter:none;background:none;-webkit-text-fill-color:#ece7de;col
     cur = i;
     setFx(s.dataset.fx);
     if (s.hasAttribute('data-cutscene')) playCutscene(s); else stopCutscene();
-    if (location.hash !== '#' + ids[i]) history.replaceState(null, '', '#' + ids[i]);
+    if (location.hash !== '#' + ids[i]) { try { history.replaceState(null, '', '#' + ids[i]); } catch (e) { /* hash stays as is */ } }
   }
   const next = () => go(cur + 1), prev = () => go(cur - 1);
 
@@ -1018,6 +1030,7 @@ html.print .logo{filter:none;background:none;-webkit-text-fill-color:#ece7de;col
     stopCutscene();
     const [l1, l2] = $$('.subs .line', s);
     const t1 = $('.tw', l1), t2 = $('.tw', l2);
+    if (REDUCED) { t1.textContent = t1.dataset.text; t2.textContent = t2.dataset.text; s.classList.add('ghost-on'); l2.classList.add('on'); return; }
     s.classList.remove('ghost-on'); l2.classList.remove('on');
     t1.textContent = ''; t2.textContent = '';
     later(() => typeLine(t1, t1.dataset.text, 48, () => {
@@ -1040,8 +1053,12 @@ html.print .logo{filter:none;background:none;-webkit-text-fill-color:#ece7de;col
   });
   function toggleFs() {
     const d = document, el = d.documentElement;
-    if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
-    else (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el);
+    try {
+      const r = (d.fullscreenElement || d.webkitFullscreenElement)
+        ? (d.exitFullscreen || d.webkitExitFullscreen).call(d)
+        : (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el);
+      if (r && r.catch) r.catch(() => {});
+    } catch (e) { /* full screen is optional */ }
   }
 
   /* main menu: keyboard + hover selection, mouse parallax */
