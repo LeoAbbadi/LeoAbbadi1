@@ -1,15 +1,14 @@
 // Render the presentation to a 16:9 PDF (one slide per page, links kept).
-// usage: node scripts/make_pdf.js <html file> <out.pdf> [clean]
-//   clean = hide the verb-pattern highlights
+// usage: node scripts/make_pdf.js <html file> <out.pdf>
 const { chromium } = require('playwright');
 const path = require('path');
 
 (async () => {
-  const [file, out, clean] = process.argv.slice(2);
+  const [file, out] = process.argv.slice(2);
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
-  const q = '?print=1' + (clean === 'clean' ? '&clean=1' : '');
+  const q = '?print=1';
   await page.goto('file://' + path.resolve(file) + q, { waitUntil: 'load' });
   await page.evaluate(() => document.fonts.ready);
   // make sure every CSS background image has been decoded before printing

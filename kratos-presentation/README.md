@@ -8,8 +8,7 @@ Apresentação em inglês sobre a história do Kratos, do primeiro God of War (2
 
 | Arquivo | Quando usar |
 |---|---|
-| `Kratos_Presentation.pdf` | PDF interativo. Os padrões verbais (gerúndio / infinitivo) aparecem sublinhados em cores. |
-| `Kratos_Presentation_no-highlights.pdf` | O mesmo PDF sem os sublinhados de gramática. |
+| `Kratos_Presentation.pdf` | PDF interativo com links entre as páginas. |
 | `Kratos_Presentation_Interactive.html` | Versão com animações: brasas e neve caindo, títulos surgindo letra por letra, carimbos "DEFEATED", barras de status, mapa animado, cartas para tocar e revelar e a cutscene com o Odin (faixas de cinema, legendas digitadas e o Kratos grego aparecendo com um clarão vermelho). Funciona sem internet. |
 
 ### O que é interativo no PDF
@@ -25,13 +24,13 @@ Apresentação em inglês sobre a história do Kratos, do primeiro God of War (2
 ### Controles da versão HTML
 - **→ / Espaço**: próxima página · **←**: página anterior · deslizar o dedo no iPad também funciona
 - **↑ ↓ + Enter** no menu principal · **Esc** ou **M**: volta ao menu
-- **F**: tela cheia · **G**: liga/desliga os destaques de gramática · **R**: revela as cartas "Plot twist" / "Secret"
+- **F**: tela cheia · **R**: revela as cartas "Plot twist" / "Secret"
 - Na cutscene, o botão **Replay scene** repete a cena
 
 ## Páginas
 1. Main menu · 2. Chapter select · 3. Prologue: The Ghost of Sparta · 4. God of War (2005) · 5. God of War II (2007) · 6. God of War III (2010) · 7. Interlude: A New Life in the North · 8. God of War (2018) · 9. God of War Ragnarök (2022) · 10. Cutscene: “The God I Once Was” (Kratos vs Odin) · 11. Epilogue: Valhalla (2023) · 12. The Arsenal · 13. Allies & Enemies · 14. Verb Patterns · 15. Credits
 
-O texto usa de propósito os padrões verbais do *English File, Appendix p.164* (gerúndio, infinitivo com *to* e sem *to*). A página 14 junta todos os exemplos.
+O texto usa de propósito os padrões verbais do *English File, Appendix p.164* (gerúndio, infinitivo com *to* e sem *to*). A página 14 junta todos os exemplos (sem sublinhar nada nas páginas da história).
 
 ## Como gerar de novo
 
@@ -44,9 +43,7 @@ python3 -I scripts/prep_images.py <pasta-com-os-repos-de-origem> <pasta-de-envio
 python3 -I scripts/build.py --artifact /tmp/kratos-saga.html
 # 3. gerar os PDFs (precisa do Playwright + Chromium)
 node scripts/make_pdf.js dist/Kratos_Presentation_Interactive.html /tmp/raw.pdf
-node scripts/make_pdf.js dist/Kratos_Presentation_Interactive.html /tmp/raw_clean.pdf clean
 python3 -I scripts/finish_pdf.py /tmp/raw.pdf dist/Kratos_Presentation.pdf
-python3 -I scripts/finish_pdf.py /tmp/raw_clean.pdf dist/Kratos_Presentation_no-highlights.pdf
 # testes rápidos
 node scripts/test_interaction.js dist/Kratos_Presentation_Interactive.html
 node scripts/shots.js dist/Kratos_Presentation_Interactive.html <pasta-de-saida>

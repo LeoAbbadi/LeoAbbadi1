@@ -113,12 +113,6 @@ a{color:inherit}
 .tag::before{content:'';width:52px;height:2px;background:var(--accent);box-shadow:0 0 12px var(--accent)}
 .tag i{font-style:normal;color:var(--dim)}
 .hud-top .sp{flex:1}
-.legend{display:flex;gap:22px;font:600 17px/1 var(--hud);letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
-.legend span{display:flex;align-items:center;gap:8px}
-.legend span::before{content:'';width:26px;height:4px;background:var(--c)}
-.gtoggle{cursor:pointer;font:600 16px/1 var(--hud);letter-spacing:.18em;color:var(--muted);border:1px solid rgba(200,163,90,.35);padding:8px 12px;background:rgba(0,0,0,.4);text-transform:uppercase}
-.gtoggle:hover{color:var(--bone);border-color:var(--gold2)}
-html.nogrammar .legend{display:none}
 .counter{font:500 22px/1 var(--hud);letter-spacing:.2em;color:var(--muted);white-space:nowrap}
 .counter b{color:var(--bone);font-size:32px;font-weight:600}
 .hud-bot{position:absolute;left:110px;right:110px;bottom:36px;height:66px;display:flex;align-items:center;gap:16px;z-index:20}
@@ -147,9 +141,7 @@ html.nogrammar .legend{display:none}
 .objective em{margin-left:auto;font:700 15px/1 var(--hud);letter-spacing:.2em;text-transform:uppercase;color:#a6e6a0;border:1px solid currentColor;padding:6px 10px;font-style:normal;white-space:nowrap}
 .story{font:400 31px/1.42 var(--body);color:var(--text);margin:0 0 16px;text-shadow:0 2px 14px rgba(0,0,0,.95)}
 .story strong{color:#fff;font-weight:700}
-.vp{font-weight:700;color:#fff;text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:7px;text-decoration-color:var(--c);text-decoration-skip-ink:none}
-.vp.g{--c:var(--ember)}.vp.t{--c:var(--frost)}.vp.b{--c:var(--violet)}
-html.nogrammar .vp{font-weight:inherit;color:inherit;text-decoration:none}
+.vp{font-weight:inherit;color:inherit;text-decoration:none}
 
 /* framed media */
 .frame{position:relative;border:1px solid rgba(200,163,90,.55);background:#000 var(--bg) center/cover no-repeat;box-shadow:0 24px 60px rgba(0,0,0,.65);overflow:hidden}
@@ -338,7 +330,7 @@ html.nogrammar .vp{font-weight:inherit;color:inherit;text-decoration:none}
 .gcol .rule{font:600 18px/1.3 var(--hud);letter-spacing:.2em;color:var(--c);text-transform:uppercase;margin:6px 0 16px}
 .gcol ul{list-style:none;margin:0;padding:0}
 .gcol li{display:flex;gap:14px;align-items:baseline;justify-content:space-between;padding:11px 0;border-top:1px solid rgba(255,255,255,.08);font:400 24px/1.28 var(--body);color:var(--text)}
-.gcol li b{color:#fff;text-decoration:underline;text-decoration-color:var(--c);text-decoration-thickness:3px;text-underline-offset:6px}
+.gcol li b{color:var(--c);font-weight:700}
 .gcol li a{flex:none;font:600 14px/1 var(--hud);letter-spacing:.16em;color:var(--muted);text-decoration:none;border:1px solid rgba(200,163,90,.4);padding:6px 8px;text-transform:uppercase;white-space:nowrap}
 .gcol li a:hover{color:var(--bone);border-color:var(--gold2)}
 .gcol.g{--c:var(--ember)}.gcol.t{--c:var(--frost)}.gcol.b{--c:var(--violet)}
@@ -813,7 +805,6 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--gold2);outline-offs
         <li><span>Kratos <b>let Atreus go</b>.</span><a href="#s-ragnarok">Ch. V</a></li>
       </ul></div>
     </div>
-    <p class="gnote a" style="--d:6">Colour code used in the story pages: orange = gerund · blue = infinitive with <i>to</i> · purple = infinitive without <i>to</i>.</p>
   </div>
 </section>
 
@@ -850,7 +841,6 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--gold2);outline-offs
   const PRINT = params.has('print');
   const REDUCED = !PRINT && matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (PRINT) root.classList.add('print');
-  if (params.has('clean')) root.classList.add('nogrammar');
 
   const stage = $('#stage');
   const slides = $$('.slide');
@@ -866,15 +856,12 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--gold2);outline-offs
     menu: '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>'
   };
 
-  /* ---- build the HUD (page counter, legend, bottom navigation) ---- */
+  /* ---- build the HUD (page counter, bottom navigation) ---- */
   slides.forEach((s, i) => {
     if (s.hasAttribute('data-nohud')) return;
     const top = $('.hud-top', s);
     if (top) {
       const sp = document.createElement('div'); sp.className = 'sp'; top.appendChild(sp);
-      if (s.classList.contains('story')) {
-        top.insertAdjacentHTML('beforeend', '<div class="legend"><span style="--c:var(--ember)">-ing</span><span style="--c:var(--frost)">to + verb</span><span style="--c:var(--violet)">verb without to</span></div><button class="gtoggle screen-only" type="button" data-gtoggle title="Show or hide verb patterns (G)">Verb patterns</button>');
-      }
       top.insertAdjacentHTML('beforeend', `<div class="counter"><b>${String(i + 1).padStart(2, '0')}</b> / ${slides.length}</div>`);
     }
     const prev = ids[i - 1], next = ids[i + 1];
@@ -1042,8 +1029,6 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--gold2);outline-offs
   document.addEventListener('click', e => {
     const rp = e.target.closest('[data-replay]');
     if (rp) { playCutscene(rp.closest('.slide')); return; }
-    const tg = e.target.closest('[data-gtoggle]');
-    if (tg) { root.classList.toggle('nogrammar'); return; }
     const fs = e.target.closest('[data-fullscreen]');
     if (fs) { toggleFs(); return; }
     const rv = e.target.closest('[data-reveal]');
@@ -1087,7 +1072,6 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--gold2);outline-offs
       case 'Home': go(0); break;
       case 'End': go(slides.length - 1); break;
       case 'f': case 'F': toggleFs(); break;
-      case 'g': case 'G': root.classList.toggle('nogrammar'); break;
       case 'r': case 'R': $$('[data-reveal]', slides[cur]).forEach(r => r.classList.toggle('open')); break;
     }
   });
