@@ -1,13 +1,16 @@
 """Crop, resize and compress the source images used by the presentation.
 
-usage: python3 -I scripts/prep_images.py <source_root> <menu_screenshot> <out_dir>
+usage: python3 -I scripts/prep_images.py <source_root> <uploads_dir> <out_dir>
 
 <source_root> holds clones of public fan-site repositories (see README for the list).
+<uploads_dir> holds the images sent by the author: menu.jpg, gow3_close.png,
+ascension.jpg, serpent.jpg, gow1_art.png and gow1_cover.jpg.
 """
 import sys, os
 from PIL import Image, ImageFilter, ImageDraw, ImageEnhance
 
-SRC, MENU, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
+SRC, UPL, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
+MENU = os.path.join(UPL, 'menu.jpg')
 os.makedirs(OUT, exist_ok=True)
 
 def p(*parts):
@@ -37,6 +40,9 @@ def save_webp(im, name, q=82):
 def load(*parts):
     return Image.open(p(*parts))
 
+def up(name):
+    return Image.open(os.path.join(UPL, name)).convert('RGB')
+
 # --- main menu: the player's own screenshot, with the original logo/menu blurred away
 m = Image.open(MENU).convert('RGB').resize((1920, 1080), Image.LANCZOS)
 blurred = m.filter(ImageFilter.GaussianBlur(38))
@@ -63,6 +69,9 @@ bgs = {
     'freya_fight.jpg': (load(*C, 'bg-hero-1920.jpg'), 0.5, 0.5),
     'hug.jpg': (load(*G, 'final.jpg'), 0.5, 0.45),
     'allies.jpg': (load(*G, 'aliados.jpg'), 0.5, 0.5),
+    'ascension.jpg': (up('ascension.jpg'), 0.5, 0.5),
+    'gow1_art.jpg': (up('gow1_art.png'), 0.5, 0.5),
+    'gow3_close.jpg': (up('gow3_close.png'), 0.5, 0.5),
 }
 for name, (im, cx, cy) in bgs.items():
     save_jpg(cover(im.convert('RGB'), 1920, 1080, cx, cy), name, 78)
@@ -78,6 +87,7 @@ stills = {
     'blades.jpg': (load(*S, 'armas', 'espadas-del-caos.jpg'), 0.5, 0.5),
     'shield.jpg': (load(*S, 'armas', 'escudo.jpeg'), 0.55, 0.5),
     'axe.jpg': (load(*S, 'armas', 'leviatan.png').convert('RGBA'), 0.5, 0.5),
+    'serpent.jpg': (up('serpent.jpg'), 0.56, 0.45),
 }
 for name, (im, cx, cy) in stills.items():
     if im.mode == 'RGBA':
@@ -103,7 +113,6 @@ for name, (im, cx, cy) in cards.items():
 
 # --- game covers for the chapter select (360x480)
 covers = {
-    'cover1.jpg': (load(*E, 'quadro-decorativo-god-of-war-1-com-moldura-a3-placa-decorativa.webp').crop((40, 40, 829, 1160)), 0.5, 0.5),
     'cover2.jpg': (load(*E, 'God_of_War_2_capa.png'), 0.5, 0.5),
     'cover3.jpg': (load(*E, 'UXEil8SSYdE1mzQVnoqfu3Tw.webp'), 0.55, 0.5),
     'cover4.jpg': (load('Eric081a_GodOfWar', 'God_of_War_2018_capa.png'), 0.5, 0.5),
@@ -111,6 +120,30 @@ covers = {
 }
 for name, (im, cx, cy) in covers.items():
     save_jpg(cover(im.convert('RGB'), 360, 480, cx, cy), name, 82)
+
+# cutscene face-off: Norse Kratos (the author's menu screenshot, mirrored to face right),
+# Odin (right side of the Odin and Thor still) and Greek-era Kratos as the "ghost"
+ImageOps = __import__('PIL.ImageOps', fromlist=['ImageOps'])
+ks = ImageOps.mirror(Image.open(MENU).convert('RGB').resize((1920, 1080), Image.LANCZOS).crop((930, 0, 1890, 1080)))
+save_jpg(ks, 'kratos_side.jpg', 80)
+od = load(*G, 'odim_thor.jpg').convert('RGB').crop((572, 60, 1280, 660))
+save_jpg(cover(od, 960, 814), 'odin_side.jpg', 82)
+gh = cover(up('gow3_close.png'), 960, 1080, 0.47, 0.42)
+gh = ImageEnhance.Color(gh).enhance(0.8)
+fade = Image.new('L', gh.size, 0)
+fd = ImageDraw.Draw(fade)
+for x in range(gh.width):
+    v = 255 if x < 700 else max(0, 255 - (x - 700) * 255 // 260)
+    fd.line([(x, 0), (x, gh.height - 1)], fill=v)
+gh = Image.composite(gh, Image.new('RGB', gh.size, (0, 0, 0)), fade)
+save_jpg(gh, 'ghost.jpg', 80)
+
+# the square God of War (2005) cover, centred on a blurred copy of itself
+sq = up('gow1_cover.jpg').resize((360, 360), Image.LANCZOS)
+c1 = cover(up('gow1_cover.jpg'), 360, 480).filter(ImageFilter.GaussianBlur(14))
+c1 = ImageEnhance.Brightness(c1).enhance(0.6)
+c1.paste(sq, (0, 60))
+save_jpg(c1, 'cover1.jpg', 84)
 
 # --- cut-outs with transparency
 g = load(*S, 'PJ', 'kratos-enc.png').convert('RGBA'); g.thumbnail((760, 760), Image.LANCZOS)

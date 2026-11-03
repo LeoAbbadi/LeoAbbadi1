@@ -20,6 +20,7 @@ SLIDES = [
     ('s-midgard', 'Interlude: A New Life in the North'),
     ('s-gow2018', 'Chapter IV: God of War (2018)'),
     ('s-ragnarok', 'Chapter V: God of War Ragnarok (2022)'),
+    ('s-odin', 'Cutscene: Kratos vs Odin'),
     ('s-valhalla', 'Epilogue: Valhalla (2023)'),
     ('s-arsenal', 'Codex: The Arsenal'),
     ('s-characters', 'Codex: Allies & Enemies'),
